@@ -143,5 +143,42 @@ func (c *Client) patchJSON(ctx context.Context, path string, body, out any) erro
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// StartTimer starts a timer on todoID.
+func (c *Client) StartTimer(ctx context.Context, todoID string) (api.TimerSession, error) {
+	var out api.TimerSession
+	if err := c.postJSON(ctx, "/api/timer/start", api.StartTimerRequest{TodoID: todoID}, &out); err != nil {
+		return api.TimerSession{}, err
+	}
+	return out, nil
+}
+
+// StopTimer stops the active timer.
+func (c *Client) StopTimer(ctx context.Context) (api.TimerSession, error) {
+	resp, err := c.do(ctx, "POST", "/api/timer/stop", nil)
+	if err != nil {
+		return api.TimerSession{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out api.TimerSession
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return api.TimerSession{}, err
+	}
+	return out, nil
+}
+
+// ActiveTimer returns the active session, or nil if none.
+func (c *Client) ActiveTimer(ctx context.Context) (*api.TimerSession, error) {
+	resp, err := c.do(ctx, "GET", "/api/timer/active", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out *api.TimerSession
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ErrDaemonNotRunning indicates the daemon is unreachable. (Reserved for future use.)
 var ErrDaemonNotRunning = errors.New("daemon not running")
