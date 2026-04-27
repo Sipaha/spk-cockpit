@@ -22,6 +22,7 @@ web/tsconfig.tsbuildinfo
 .idea/
 .vscode/
 .DS_Store
+.playwright-mcp/
 
 # Local state
 *.db
