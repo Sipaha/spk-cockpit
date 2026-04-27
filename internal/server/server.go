@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/spk/spk-cockpit/internal/eventbus"
+	"github.com/spk/spk-cockpit/internal/todo"
 )
 
 // Config configures a Server.
@@ -22,9 +25,10 @@ type Config struct {
 }
 
 // Deps wires domain services to HTTP handlers. Fields are filled by callers between New() and Serve().
-// Phase 1 contains placeholder fields populated in Task 14.
 type Deps struct {
-	// (filled in Task 14: Todos, Tags, Bus)
+	Todos *todo.Service
+	Tags  todo.TagRepo
+	Bus   *eventbus.Bus
 }
 
 // Server owns the UDS listener and HTTP server.
