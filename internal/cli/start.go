@@ -16,6 +16,7 @@ import (
 	"github.com/spk/spk-cockpit/internal/paths"
 	"github.com/spk/spk-cockpit/internal/server"
 	"github.com/spk/spk-cockpit/internal/store"
+	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 	"github.com/spk/spk-cockpit/internal/tray"
 	"github.com/spk/spk-cockpit/internal/window"
@@ -72,6 +73,9 @@ func runStart(ctx context.Context) error {
 	eventRepo := store.NewEventRepo(st.DB)
 	todoSvc := todo.NewService(todoRepo, tagRepo, eventRepo, clock.Real(), bus)
 
+	timerRepo := store.NewTimerRepo(st.DB)
+	timerSvc := timer.NewService(timerRepo, clock.Real(), bus)
+
 	srv, err := server.New(server.Config{SocketPath: p.SocketFile, Logger: logger})
 	if err != nil {
 		return fmt.Errorf("server: %w", err)
@@ -79,6 +83,7 @@ func runStart(ctx context.Context) error {
 	srv.Deps().Todos = todoSvc
 	srv.Deps().Tags = tagRepo
 	srv.Deps().Bus = bus
+	srv.Deps().Timer = timerSvc
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
