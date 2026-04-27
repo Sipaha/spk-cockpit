@@ -13,22 +13,31 @@ Personal productivity tray app — todo list with prioritization, filtering, his
 - HTTP/UDS server with SSE for realtime UI updates
 
 ### Phase 2 ✅
-- Time-tracking on todos: `/api/timer/start`, `/api/timer/stop`, `/api/timer/active`, `/api/todos/{id}/time`
-- One-active-timer-globally invariant
-- Tray tooltip reflects active timer
-- CLI: `cockpit timer start <id> | stop | status`
+- Time-tracking on todos with one-active-globally invariant
 - TimerBadge component (live elapsed counter)
 - Quick-add inline syntax (`!priority #tag due:tomorrow`) with live preview
 - Compact `/popover` route showing today / active timer / quick add
+- CLI: `cockpit timer start | stop | status`
+- Tray tooltip reflects active timer
 
-Phases 3–4 (meetings + CalDAV + notifications, standup helper + integrations + autostart + releases) are planned separately.
+### Phase 3 ✅
+- Read-only sync of meetings from Yandex Calendar (CalDAV)
+- AES-256-GCM-encrypted secrets backed by OS keyring
+- DBus system notifications fired N minutes before each meeting (default 5, per-meeting override)
+- Markdown notes attached to meetings
+- Calendar page (Today / Tomorrow / Later)
+- Settings page (CalDAV credentials, default notify_min, sync now)
+- CLI: `cockpit meeting next | list`, `cockpit secret set | list`
+- Tray tooltip surfaces next meeting (within 24h)
+
+Phase 4 (standup helper, GitLab/Tracker integrations, autostart, GitHub Actions release) is planned separately.
 
 ## Build
 
 System dependencies (Ubuntu/Debian):
 
 ```bash
-sudo apt install -y gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+sudo apt install -y gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libsecret-1-dev
 ```
 
 Then:
@@ -51,6 +60,10 @@ cockpit stop
 cockpit timer start abc123             # timer on the todo whose id ends with abc123
 cockpit timer status                   # see what's running
 cockpit timer stop                     # stop the active timer
+cockpit meeting list -d 14                # next 14 days
+cockpit meeting next                      # closest upcoming
+cockpit secret set yandex_caldav          # reads value from stdin
+echo "my-app-password" | cockpit secret set yandex_caldav
 ```
 
 ## Filesystem
