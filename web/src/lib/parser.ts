@@ -8,7 +8,7 @@ export interface QuickAddResult {
   dueAt?: number;
 }
 
-const TAG_RE = /^#([a-z0-9][a-z0-9_\-]*)$/i;
+const TAG_RE = /^#([a-z0-9][a-z0-9_-]*)$/i;
 const PRIO_MAP: Record<string, P> = {
   "!low": Priority.Low,
   "!normal": Priority.Normal,
