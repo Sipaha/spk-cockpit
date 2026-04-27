@@ -2,16 +2,26 @@
 
 Personal productivity tray app — todo list with prioritization, filtering, history, and a single-binary architecture (Go + embedded React UI). Linux first.
 
-## Phase 1 status
+## Status
 
-- ✅ Todo CRUD (priority, status, due, tags, audit history)
-- ✅ Tray icon with menu (Open window / Quit)
-- ✅ Wails main window (webview wrapping the embedded React UI)
-- ✅ CLI (`cockpit start | stop | todo add/list/done/rm`)
-- ✅ SQLite storage with migrations
-- ✅ HTTP/UDS server with SSE for realtime UI updates
+### Phase 1 ✅
+- Todo CRUD (priority, status, due, tags, audit history)
+- Tray icon with menu (Open window / Quit)
+- Wails main window
+- CLI: `cockpit start | stop | todo add/list/done/rm`
+- SQLite storage with migrations
+- HTTP/UDS server with SSE for realtime UI updates
 
-Phases 2–4 (popover, time-tracking, meetings, CalDAV, standup, secrets, autostart, releases) are planned separately.
+### Phase 2 ✅
+- Time-tracking on todos: `/api/timer/start`, `/api/timer/stop`, `/api/timer/active`, `/api/todos/{id}/time`
+- One-active-timer-globally invariant
+- Tray tooltip reflects active timer
+- CLI: `cockpit timer start <id> | stop | status`
+- TimerBadge component (live elapsed counter)
+- Quick-add inline syntax (`!priority #tag due:tomorrow`) with live preview
+- Compact `/popover` route showing today / active timer / quick add
+
+Phases 3–4 (meetings + CalDAV + notifications, standup helper + integrations + autostart + releases) are planned separately.
 
 ## Build
 
@@ -38,6 +48,9 @@ cockpit todo list
 cockpit todo done abc123              # last 6 chars of the ID
 cockpit todo rm abc123
 cockpit stop
+cockpit timer start abc123             # timer on the todo whose id ends with abc123
+cockpit timer status                   # see what's running
+cockpit timer stop                     # stop the active timer
 ```
 
 ## Filesystem
