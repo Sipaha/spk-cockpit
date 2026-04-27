@@ -141,8 +141,17 @@ func (s *Service) Generate(ctx context.Context, day time.Time) (api.StandupRepor
 
 func (s *Service) todoBuckets(ctx context.Context, yStart, dayStart, dayEnd time.Time) (yest, today, blockers []api.StandupItem, err error) {
 	if s.cfg.Events == nil || s.cfg.Todos == nil {
-		return nil, nil, nil, errors.New("todos: not configured")
+		return nil, nil, nil, errors.New("not configured")
 	}
+	allTodos, err := s.cfg.Todos.List(ctx, todo.TodoFilter{IncludeDone: true})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	titles := make(map[string]string, len(allTodos))
+	for _, t := range allTodos {
+		titles[t.ID] = t.Title
+	}
+
 	events, err := s.cfg.Events.ListAll(ctx, yStart.Unix(), 500)
 	if err != nil {
 		return nil, nil, nil, err
@@ -159,9 +168,13 @@ func (s *Service) todoBuckets(ctx context.Context, yStart, dayStart, dayEnd time
 			continue
 		}
 		seen[e.TodoID] = struct{}{}
+		title, ok := titles[e.TodoID]
+		if !ok {
+			title = e.TodoID
+		}
 		yest = append(yest, api.StandupItem{
 			Source: api.StandupSourceTodo,
-			Title:  todoTitle(ctx, s.cfg.Todos, e.TodoID),
+			Title:  title,
 			Detail: "done",
 			RefID:  e.TodoID,
 			At:     e.At,
@@ -242,19 +255,6 @@ func (s *Service) trackerBucket(ctx context.Context, since, until time.Time) ([]
 		})
 	}
 	return out, nil
-}
-
-func todoTitle(ctx context.Context, q TodoQuerier, id string) string {
-	list, err := q.List(ctx, todo.TodoFilter{IncludeDone: true})
-	if err != nil {
-		return id
-	}
-	for _, t := range list {
-		if t.ID == id {
-			return t.Title
-		}
-	}
-	return id
 }
 
 func sortByAtDesc(items []api.StandupItem) {
