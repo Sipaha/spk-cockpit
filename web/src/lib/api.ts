@@ -1,4 +1,10 @@
-import type { Todo, Tag, CreateTodoRequest, UpdateTodoRequest, TimerSession, TodoTimeTotal } from "./types";
+import type {
+  Todo, Tag, CreateTodoRequest, UpdateTodoRequest,
+  TimerSession, TodoTimeTotal,
+  Meeting, CreateMeetingRequest, UpdateMeetingRequest,
+  Note, UpsertNoteRequest,
+  Secret, SyncStateEntry,
+} from "./types";
 
 const BASE = "";
 
@@ -42,4 +48,43 @@ export const api = {
   todoTime: (id: string, sinceUnix = 0) =>
     request<TodoTimeTotal>(`/api/todos/${id}/time?since=${sinceUnix}`),
   listTags: () => request<Tag[]>("/api/tags"),
+
+  listMeetings: (fromUnix: number, toUnix: number, includeCancelled = false) =>
+    request<Meeting[]>(
+      `/api/meetings?from=${fromUnix}&to=${toUnix}${includeCancelled ? "&includeCancelled=1" : ""}`,
+    ),
+  nextMeeting: () => request<Meeting | null>("/api/meetings/next"),
+  createMeeting: (req: CreateMeetingRequest) =>
+    request<Meeting>("/api/meetings", { method: "POST", body: JSON.stringify(req) }),
+  updateMeeting: (id: string, req: UpdateMeetingRequest) =>
+    request<Meeting>(`/api/meetings/${id}`, { method: "PATCH", body: JSON.stringify(req) }),
+  deleteMeeting: (id: string) =>
+    request<void>(`/api/meetings/${id}`, { method: "DELETE" }),
+  meetingNote: (id: string) => request<Note | null>(`/api/meetings/${id}/note`),
+  upsertNote: (req: UpsertNoteRequest) =>
+    request<Note>("/api/notes", { method: "PUT", body: JSON.stringify(req) }),
+  deleteNote: (id: string) =>
+    request<void>(`/api/notes/${id}`, { method: "DELETE" }),
+  todoNote: (id: string) => request<Note | null>(`/api/todos/${id}/note`),
+
+  listSecrets: () => request<Secret[]>("/api/secrets"),
+  setSecret: (name: string, value: string) =>
+    request<void>(`/api/secrets/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    }),
+  deleteSecret: (name: string) =>
+    request<void>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+
+  syncStatus: () => request<SyncStateEntry[]>("/api/sync"),
+  triggerSync: (source: string) =>
+    request<void>(`/api/sync/${encodeURIComponent(source)}`, { method: "POST" }),
+
+  getKv: (key: string) =>
+    request<{ key: string; value: string | null }>(`/api/kv/${encodeURIComponent(key)}`),
+  setKv: (key: string, value: string) =>
+    request<void>(`/api/kv/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    }),
 };
