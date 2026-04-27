@@ -45,11 +45,29 @@ while IFS= read -r mod; do
 done < "$DEPS_TMP"
 rm -f "$DEPS_TMP"
 
-# Web prod deps. We read them from web/package.json's dependencies.
-WEB_DEPS="$(node -e "
-const p = require('$ROOT/web/package.json');
-console.log(Object.keys(p.dependencies || {}).join(' '));
+# Web runtime deps: the full transitive `dependencies` tree (excluding @types/*
+# which are TS-only and never bundled), plus build-time tools whose own code ends
+# up in the redistributed bundle. Right now the only such build-time tool is
+# tailwindcss: its preflight CSS is copied into our final stylesheet (verifiable
+# via the `/*! tailwindcss ... | MIT */` comment in web/embed/dist/assets/index-*.css).
+# Other devDependencies (vite, eslint, typescript, vitest, @testing-library/*, etc.)
+# do not emit their own code into the final artifact.
+BUNDLED_BUILD_TOOLS="tailwindcss"
+TRANSITIVE_PROD="$(cd "$ROOT/web" && pnpm list -r --prod --depth Infinity --json 2>/dev/null | node -e "
+const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const seen = new Set();
+function walk(deps) {
+  if (!deps) return;
+  for (const [name, info] of Object.entries(deps)) {
+    if (name.startsWith('@types/')) continue;
+    seen.add(name);
+    walk(info.dependencies);
+  }
+}
+for (const p of data) walk(p.dependencies);
+console.log([...seen].sort().join(' '));
 ")"
+WEB_DEPS="$TRANSITIVE_PROD $BUNDLED_BUILD_TOOLS"
 
 cd "$ROOT/web"
 for pkg in $WEB_DEPS; do
