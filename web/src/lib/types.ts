@@ -127,3 +127,22 @@ export interface SyncStateEntry {
   lastOkAt?: number;
   lastErr?: string;
 }
+
+export type StandupItemSource = "todo" | "gitlab" | "tracker";
+
+export interface StandupItem {
+  source: StandupItemSource;
+  title: string;
+  detail?: string;
+  url?: string;
+  refId?: string;
+  at: number;
+}
+
+export interface StandupReport {
+  day: string;
+  yesterday: StandupItem[];
+  today: StandupItem[];
+  blockers: StandupItem[];
+  errors?: string[];
+}

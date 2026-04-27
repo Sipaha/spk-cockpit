@@ -3,6 +3,7 @@ import { Todos } from "./pages/Todos";
 import { Popover } from "./pages/Popover";
 import { Calendar } from "./pages/Calendar";
 import { Settings } from "./pages/Settings";
+import { Standup } from "./pages/Standup";
 
 export function App() {
   return (
@@ -29,6 +30,7 @@ function MainShell() {
         <nav className="flex flex-col gap-1">
           {navItem("/", "Todos")}
           {navItem("/calendar", "Calendar")}
+          {navItem("/standup", "Standup")}
           {navItem("/settings", "Settings")}
           {navItem("/popover", "Compact view")}
         </nav>
@@ -37,6 +39,7 @@ function MainShell() {
         <Routes>
           <Route path="/" element={<Todos />} />
           <Route path="/calendar" element={<Calendar />} />
+          <Route path="/standup" element={<Standup />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Todos />} />
         </Routes>

@@ -4,6 +4,7 @@ import type {
   Meeting, CreateMeetingRequest, UpdateMeetingRequest,
   Note, UpsertNoteRequest,
   Secret, SyncStateEntry,
+  StandupReport,
 } from "./types";
 
 const BASE = "";
@@ -79,6 +80,9 @@ export const api = {
   syncStatus: () => request<SyncStateEntry[]>("/api/sync"),
   triggerSync: (source: string) =>
     request<void>(`/api/sync/${encodeURIComponent(source)}`, { method: "POST" }),
+
+  standup: (date?: string) =>
+    request<StandupReport>(`/api/standup${date ? `?date=${encodeURIComponent(date)}` : ""}`),
 
   getKv: (key: string) =>
     request<{ key: string; value: string | null }>(`/api/kv/${encodeURIComponent(key)}`),
