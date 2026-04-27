@@ -12,6 +12,7 @@ build-fast:
 
 web-build:
 	cd web && pnpm install --frozen-lockfile && pnpm build
+	rm -rf web/embed/dist && cp -r web/dist web/embed/dist
 
 test: test-unit
 	cd web && pnpm test --run
@@ -30,7 +31,7 @@ tidy:
 	$(GO) mod tidy
 
 clean:
-	rm -rf $(BUILD_DIR) web/dist
+	rm -rf $(BUILD_DIR) web/dist web/embed/dist
 
 run: build-fast
 	$(BIN) start --foreground

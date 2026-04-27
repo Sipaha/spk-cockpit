@@ -13,6 +13,7 @@ coverage.html
 # Web
 node_modules/
 web/dist/
+web/embed/dist/
 web/test-results/
 web/tsconfig.tsbuildinfo
 .vite/
