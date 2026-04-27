@@ -56,6 +56,7 @@ func init() {
 
 func runStart(ctx context.Context) error {
 	logger := cockpitlog.New(os.Stderr, cockpitlog.ParseLevel(os.Getenv("SPK_COCKPIT_LOG_LEVEL")))
+	slog.SetDefault(logger) // so slog.Debug(...) elsewhere honors SPK_COCKPIT_LOG_LEVEL
 
 	p, err := paths.New()
 	if err != nil {
