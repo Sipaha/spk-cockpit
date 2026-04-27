@@ -242,13 +242,15 @@ func runStart(ctx context.Context) error {
 	go func() { //nolint:gosec // context.Background is intentional: Stop needs its own deadline, not the cancelled request ctx
 		<-ctx.Done()
 		logger.Info("shutting down")
-		_ = srv.Stop(context.Background())
-		if trayBackend != nil {
-			trayBackend.Quit()
-		}
+		// Kick off Wails and tray teardown in parallel with the HTTP shutdown so
+		// the user-perceived Quit latency is just whichever is slowest, not their sum.
 		if winApp != nil {
 			winApp.Quit()
 		}
+		if trayBackend != nil {
+			trayBackend.Quit()
+		}
+		_ = srv.Stop(context.Background())
 	}()
 
 	// Tray runs in a goroutine. Click handlers call back into the daemon's services.

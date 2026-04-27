@@ -97,14 +97,20 @@ func (s *Server) Serve() error {
 	return err
 }
 
-// Stop gracefully shuts down the HTTP server.
+// Stop shuts down the HTTP server. Idle connections drain via Shutdown with a
+// tight 200ms deadline; long-lived ones (SSE) are then severed via Close so
+// the tray Quit doesn't hang on subscribers that never disconnect.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.httpSrv == nil {
 		return nil
 	}
-	shutdownCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
-	return s.httpSrv.Shutdown(shutdownCtx)
+	if err := s.httpSrv.Shutdown(shutdownCtx); err != nil {
+		// Deadline reached or active connections held open — force-close.
+		_ = s.httpSrv.Close()
+	}
+	return nil
 }
 
 // Deps exposes the dependency struct for callers to populate between New() and Serve().
