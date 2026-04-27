@@ -69,6 +69,9 @@ func (s *Service) Create(ctx context.Context, req api.CreateTodoRequest) (api.To
 		return api.Todo{}, fmt.Errorf("audit: %w", err)
 	}
 	t.Tags = req.Tags
+	if t.Tags == nil {
+		t.Tags = []string{}
+	}
 	s.publish(api.EventTodoCreated, api.TodoCreatedData{Todo: t})
 	return t, nil
 }
@@ -147,6 +150,10 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 			return api.Todo{}, fmt.Errorf("set tags: %w", err)
 		}
 		changed = append(changed, "tags")
+		if *req.Tags == nil {
+			empty := []string{}
+			req.Tags = &empty
+		}
 		updated.Tags = *req.Tags
 	} else {
 		tags, err := s.tags.GetTodoTags(ctx, id)

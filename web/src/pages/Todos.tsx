@@ -19,7 +19,7 @@ export function Todos() {
   }, [applyEvent]);
 
   return (
-    <div className="max-w-2xl flex flex-col gap-6">
+    <div className="max-w-3xl mx-auto flex flex-col gap-6">
       <AddTodoForm />
       <TodoList />
     </div>

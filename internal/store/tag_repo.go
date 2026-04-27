@@ -89,7 +89,7 @@ func (r *TagRepo) GetTodoTags(ctx context.Context, todoID string) ([]string, err
 		return nil, fmt.Errorf("get todo_tags: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []string
+	out := []string{} // empty slice, not nil — JSON-marshals to [] so the UI never sees null
 	for rows.Next() {
 		var t string
 		if err := rows.Scan(&t); err != nil {

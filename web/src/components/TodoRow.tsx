@@ -52,7 +52,7 @@ export function TodoRow({
       </span>
       {hasTimer && <TimerBadge startedAt={activeTimerStartedAt!} />}
       <div className="flex gap-1">
-        {todo.tags.map((t) => (
+        {(todo.tags ?? []).map((t) => (
           <TagPill key={t} name={t} />
         ))}
       </div>
