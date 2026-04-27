@@ -2,12 +2,13 @@ package todo
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/clock"
@@ -223,7 +224,7 @@ func (s *Service) History(ctx context.Context, id string, limit int) ([]api.Todo
 }
 
 func newID() string {
-	return uuid.New().String()
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
 
 func priorityStr(p api.Priority) string {
