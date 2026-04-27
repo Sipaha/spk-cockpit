@@ -38,7 +38,12 @@ func (r *Event) ListByTodo(_ context.Context, todoID string, limit int) ([]api.T
 			out = append(out, e)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].At > out[j].At })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].At != out[j].At {
+			return out[i].At > out[j].At
+		}
+		return out[i].ID > out[j].ID
+	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
