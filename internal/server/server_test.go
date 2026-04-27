@@ -18,6 +18,8 @@ import (
 	"github.com/spk/spk-cockpit/internal/clock"
 	"github.com/spk/spk-cockpit/internal/eventbus"
 	"github.com/spk/spk-cockpit/internal/server"
+	"github.com/spk/spk-cockpit/internal/timer"
+	timerfake "github.com/spk/spk-cockpit/internal/timer/fakerepo"
 	"github.com/spk/spk-cockpit/internal/todo"
 	"github.com/spk/spk-cockpit/internal/todo/fakerepo"
 )
@@ -65,6 +67,8 @@ func newTestServer(t *testing.T) (string, func()) {
 	srv.Deps().Todos = todo.NewService(tr, gr, er, clock.NewFake(time.Unix(1700000000, 0)), bus)
 	srv.Deps().Tags = gr
 	srv.Deps().Bus = bus
+	timerRepo := timerfake.NewTimer()
+	srv.Deps().Timer = timer.NewService(timerRepo, clock.NewFake(time.Unix(1700000000, 0)), bus)
 	go func() { _ = srv.Serve() }()
 	waitForSocket(t, sock)
 	return sock, func() { _ = srv.Stop(context.Background()); bus.Close() }
@@ -141,4 +145,43 @@ func TestServer_SSEReceivesPublishedEvents(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no SSE event received")
 	}
+}
+
+func TestServer_TimerStartActiveStop(t *testing.T) {
+	sock, stop := newTestServer(t)
+	defer stop()
+	c := udsClient(sock)
+
+	body, _ := json.Marshal(api.CreateTodoRequest{Title: "T", Priority: api.PriorityNormal})
+	resp, err := c.Post("http://unix/api/todos", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var td api.Todo
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&td))
+
+	startBody, _ := json.Marshal(api.StartTimerRequest{TodoID: td.ID})
+	resp2, err := c.Post("http://unix/api/timer/start", "application/json", bytes.NewReader(startBody))
+	require.NoError(t, err)
+	defer func() { _ = resp2.Body.Close() }()
+	require.Equal(t, 200, resp2.StatusCode)
+
+	resp3, err := c.Get("http://unix/api/timer/active")
+	require.NoError(t, err)
+	defer func() { _ = resp3.Body.Close() }()
+	var active *api.TimerSession
+	require.NoError(t, json.NewDecoder(resp3.Body).Decode(&active))
+	require.NotNil(t, active)
+	require.Equal(t, td.ID, active.TodoID)
+
+	resp4, err := c.Post("http://unix/api/timer/stop", "application/json", nil)
+	require.NoError(t, err)
+	defer func() { _ = resp4.Body.Close() }()
+	require.Equal(t, 200, resp4.StatusCode)
+
+	resp5, err := c.Get("http://unix/api/timer/active")
+	require.NoError(t, err)
+	defer func() { _ = resp5.Body.Close() }()
+	var afterStop *api.TimerSession
+	require.NoError(t, json.NewDecoder(resp5.Body).Decode(&afterStop))
+	require.Nil(t, afterStop)
 }

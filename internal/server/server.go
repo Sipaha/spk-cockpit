@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spk/spk-cockpit/internal/eventbus"
+	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 )
 
@@ -29,6 +30,7 @@ type Deps struct {
 	Todos *todo.Service
 	Tags  todo.TagRepo
 	Bus   *eventbus.Bus
+	Timer *timer.Service
 }
 
 // Server owns the UDS listener and HTTP server.

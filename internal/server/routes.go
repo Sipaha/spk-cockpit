@@ -23,6 +23,12 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("GET /api/tags", handleListTags(d))
 	mux.HandleFunc("GET /api/events", handleEvents(d))
 
+	mux.HandleFunc("POST /api/timer/start", handleTimerStart(d))
+	mux.HandleFunc("POST /api/timer/stop", handleTimerStop(d))
+	mux.HandleFunc("GET /api/timer/active", handleTimerActive(d))
+	mux.HandleFunc("GET /api/todos/{id}/time", handleTodoTime(d))
+	mux.HandleFunc("GET /api/todos/{id}/sessions", handleTodoTimerSessions(d))
+
 	if dist, err := fs.Sub(webembed.DistFS, "dist"); err == nil {
 		mux.Handle("/", spaFallback(dist))
 	}
