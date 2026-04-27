@@ -1,4 +1,4 @@
-import type { Todo, Tag, CreateTodoRequest, UpdateTodoRequest } from "./types";
+import type { Todo, Tag, CreateTodoRequest, UpdateTodoRequest, TimerSession, TodoTimeTotal } from "./types";
 
 const BASE = "";
 
@@ -30,5 +30,16 @@ export const api = {
     request<Todo>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(req) }),
   deleteTodo: (id: string) =>
     request<void>(`/api/todos/${id}`, { method: "DELETE" }),
+  startTimer: (todoId: string) =>
+    request<TimerSession>("/api/timer/start", {
+      method: "POST",
+      body: JSON.stringify({ todoId }),
+    }),
+  stopTimer: () =>
+    request<TimerSession>("/api/timer/stop", { method: "POST" }),
+  activeTimer: () =>
+    request<TimerSession | null>("/api/timer/active"),
+  todoTime: (id: string, sinceUnix = 0) =>
+    request<TodoTimeTotal>(`/api/todos/${id}/time?since=${sinceUnix}`),
   listTags: () => request<Tag[]>("/api/tags"),
 };

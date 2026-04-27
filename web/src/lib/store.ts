@@ -1,15 +1,19 @@
 import { create } from "zustand";
 import { api } from "./api";
-import type { Todo, ApiEvent } from "./types";
+import type { Todo, ApiEvent, TimerSession } from "./types";
 
 interface TodoState {
   todos: Todo[];
   loading: boolean;
   includeDone: boolean;
   error: string | null;
+
+  activeTimer: TimerSession | null;
+
   load: () => Promise<void>;
   setIncludeDone: (v: boolean) => void;
   applyEvent: (e: ApiEvent) => void;
+  loadActiveTimer: () => Promise<void>;
 }
 
 export const useTodoStore = create<TodoState>((set, get) => ({
@@ -17,6 +21,8 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   loading: false,
   includeDone: false,
   error: null,
+  activeTimer: null,
+
   async load() {
     set({ loading: true, error: null });
     try {
@@ -30,6 +36,14 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     set({ includeDone: v });
     void get().load();
   },
+  async loadActiveTimer() {
+    try {
+      const t = await api.activeTimer();
+      set({ activeTimer: t });
+    } catch {
+      set({ activeTimer: null });
+    }
+  },
   applyEvent(e) {
     if (e.type === "todo.created") {
       const { todo } = e.data as { todo: Todo };
@@ -40,6 +54,18 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     } else if (e.type === "todo.deleted") {
       const { todoId } = e.data as { todoId: string };
       set({ todos: get().todos.filter((t) => t.id !== todoId) });
+    } else if (e.type === "timer.started") {
+      const d = e.data as { todoId: string; sessionId: number; startedAt: number };
+      set({
+        activeTimer: {
+          id: d.sessionId,
+          todoId: d.todoId,
+          startedAt: d.startedAt,
+          source: "manual",
+        },
+      });
+    } else if (e.type === "timer.stopped") {
+      set({ activeTimer: null });
     }
   },
 }));

@@ -43,3 +43,23 @@ export interface ApiEvent<T = unknown> {
   type: string;
   data: T;
 }
+
+export interface TimerSession {
+  id: number;
+  todoId: string;
+  startedAt: number;
+  endedAt?: number;
+  source: string;
+}
+
+export interface TodoTimeTotal {
+  todoId: string;
+  sinceUnix: number;
+  totalSec: number;
+  sessionCount: number;
+  hasActive: boolean;
+}
+
+export interface StartTimerRequest {
+  todoId: string;
+}
