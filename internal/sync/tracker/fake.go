@@ -38,7 +38,7 @@ func (f *Fake) AssignedActive(_ context.Context, username string, since, until t
 	if f.err != nil {
 		return nil, f.err
 	}
-	_ = username
+	_ = username // Fake ignores username; tests pre-populate items that should match
 	out := make([]Item, 0, len(f.items))
 	for _, it := range f.items {
 		if (it.At.Equal(since) || it.At.After(since)) && it.At.Before(until) {

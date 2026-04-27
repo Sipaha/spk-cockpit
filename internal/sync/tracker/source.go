@@ -17,7 +17,7 @@ type Item struct {
 	Key    string // display key e.g. "TICKET-123"
 	Title  string
 	Status string    // current status
-	URL    string    // https://tracker/.../v_app/task@TICKET-123
+	URL    string    // e.g. https://tracker.example.com/v2/dashboard?recordRef=emodel/task@TICKET-123
 	At     time.Time // last-modified
 }
 

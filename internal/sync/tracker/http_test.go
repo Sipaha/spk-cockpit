@@ -16,6 +16,26 @@ func TestHTTPSource_NotConfigured(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotConfigured)
 }
 
+func TestHTTPSource_AssignedActive_SkipsUnparseableTimestamps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"records":[
+			{"id":"emodel/task@TICKET-BAD","attributes":{"_disp":"Bad Date","_status":"in_progress","_modified":"not-a-date"}},
+			{"id":"emodel/task@TICKET-OK","attributes":{"_disp":"Good Date","_status":"done","_modified":"2026-04-26T10:00:00Z"}}
+		]}`))
+	}))
+	defer srv.Close()
+
+	src, err := NewHTTPSource(Config{BaseURL: srv.URL, Username: "alice", Token: "tok"})
+	require.NoError(t, err)
+	since := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)
+	items, err := src.AssignedActive(context.Background(), "alice", since, until)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "TICKET-OK", items[0].Key)
+}
+
 func TestHTTPSource_AssignedActive_HappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)

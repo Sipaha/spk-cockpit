@@ -110,7 +110,11 @@ func (h *HTTPSource) AssignedActive(ctx context.Context, username string, since,
 
 	out := make([]Item, 0, len(qr.Records))
 	for _, r := range qr.Records {
-		at, _ := time.Parse(time.RFC3339, r.Attributes.ModifiedAt)
+		at, err := time.Parse(time.RFC3339, r.Attributes.ModifiedAt)
+		if err != nil {
+			// skip records with unparseable modified timestamps; rare and not worth surfacing
+			continue
+		}
 		key := r.ID
 		if i := strings.LastIndex(r.ID, "@"); i >= 0 && i+1 < len(r.ID) {
 			key = r.ID[i+1:]
