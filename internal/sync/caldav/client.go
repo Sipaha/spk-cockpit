@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -56,16 +57,14 @@ func NewClient(cfg Config) (Client, error) {
 	return &httpClient{cfg: cfg, cal: cl}, nil
 }
 
-// FetchEvents queries the primary calendar for events in [from, to].
+// FetchEvents queries the calendar for events in [from, to].
+//
+// Tries discovery first (FindCalendars) and uses the first event-bearing
+// collection found. Falls back to querying the configured BaseURL directly
+// when discovery returns nothing or fails — this is the case for Yandex,
+// which does not advertise calendars at the well-known principal location and
+// expects clients to know the events-default URL upfront.
 func (c *httpClient) FetchEvents(ctx context.Context, from, to time.Time, _ string) ([]api.Meeting, string, bool, error) {
-	calendars, err := c.cal.FindCalendars(ctx, "")
-	if err != nil {
-		return nil, "", false, fmt.Errorf("find calendars: %w", err)
-	}
-	if len(calendars) == 0 {
-		return nil, "", false, nil
-	}
-	primary := calendars[0]
 	q := &caldav.CalendarQuery{
 		CompFilter: caldav.CompFilter{
 			Name: ical.CompCalendar,
@@ -76,24 +75,65 @@ func (c *httpClient) FetchEvents(ctx context.Context, from, to time.Time, _ stri
 			}},
 		},
 	}
-	objects, err := c.cal.QueryCalendar(ctx, primary.Path, q)
-	if err != nil {
-		return nil, "", false, fmt.Errorf("query: %w", err)
+
+	paths := c.discoverCalendarPaths(ctx)
+	slog.Debug("caldav.FetchEvents: discovered paths", "count", len(paths), "paths", paths)
+	if len(paths) == 0 {
+		slog.Debug("caldav.FetchEvents: discovery empty, using BaseURL directly", "url", c.cfg.BaseURL)
+		paths = []string{c.cfg.BaseURL}
+	}
+
+	var (
+		objects []caldav.CalendarObject
+		lastErr error
+	)
+	for _, p := range paths {
+		objs, err := c.cal.QueryCalendar(ctx, p, q)
+		if err != nil {
+			slog.Debug("caldav.FetchEvents: QueryCalendar failed", "path", p, "err", err)
+			lastErr = err
+			continue
+		}
+		slog.Debug("caldav.FetchEvents: QueryCalendar ok", "path", p, "objects", len(objs))
+		objects = append(objects, objs...)
+	}
+	slog.Debug("caldav.FetchEvents: total objects", "count", len(objects))
+	if len(objects) == 0 && lastErr != nil {
+		return nil, "", false, fmt.Errorf("query: %w", lastErr)
 	}
 	var meetings []api.Meeting
 	for _, obj := range objects {
 		evs := ParseICalEvents(obj.Data, from, to)
+		slog.Debug("caldav.FetchEvents: parsed object", "etag", obj.ETag, "events", len(evs))
 		for _, e := range evs {
 			e.ExternalETag = obj.ETag
 			meetings = append(meetings, e)
 		}
 	}
+	slog.Debug("caldav.FetchEvents: total parsed events", "count", len(meetings), "from", from, "to", to)
 	h := sha1.New() //nolint:gosec // non-security use: ctag fingerprint only
 	for _, m := range meetings {
 		_, _ = io.WriteString(h, m.ExternalUID)
 		_, _ = io.WriteString(h, m.ExternalETag)
 	}
 	return meetings, hex.EncodeToString(h.Sum(nil)), false, nil
+}
+
+// discoverCalendarPaths runs FindCalendars and returns the paths of every
+// returned collection. If discovery fails (or returns nothing), the caller
+// falls back to the explicit BaseURL configured by the user.
+func (c *httpClient) discoverCalendarPaths(ctx context.Context) []string {
+	cals, err := c.cal.FindCalendars(ctx, "")
+	if err != nil || len(cals) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(cals))
+	for _, cal := range cals {
+		if cal.Path != "" {
+			out = append(out, cal.Path)
+		}
+	}
+	return out
 }
 
 // ParseICalEvents extracts api.Meeting values from an iCal object, restricted to [from, to].
