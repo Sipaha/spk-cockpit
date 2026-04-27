@@ -2,6 +2,8 @@
 build/
 *.exe
 *.out
+/cockpit
+/spk-cockpit
 
 # Go
 *.test
