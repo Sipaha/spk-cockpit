@@ -121,9 +121,4 @@ For frontend hot-reload run `cd web && pnpm dev`; the daemon serves the embedded
 
 ## License
 
-Released under the [Apache License 2.0](LICENSE) — free for personal and commercial use, including in proprietary products.
-
-Forks are welcome, with two requirements:
-
-- **Mark your changes.** Modified files must carry a notice stating they were changed (e.g., a comment header, an entry in `CHANGES.md`, or a notice in the commit/PR).
-- **Pick a different name.** The `spk-cockpit` name and logo are reserved for the original project; rename your fork before redistributing.
+[Apache License 2.0](LICENSE).
