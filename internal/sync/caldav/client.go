@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -40,9 +41,14 @@ type httpClient struct {
 	cal *caldav.Client
 }
 
-// NewClient constructs a real CalDAV client.
+// NewClient constructs a real CalDAV client. The HTTP transport is wrapped with
+// quoteETagTransport so servers that emit unquoted ETags (Yandex among them)
+// don't trip the strict RFC 7232 parser inside emersion/go-webdav.
 func NewClient(cfg Config) (Client, error) {
-	httpAuth := webdav.HTTPClientWithBasicAuth(nil, cfg.Username, cfg.Password)
+	base := &http.Client{
+		Transport: &quoteETagTransport{inner: http.DefaultTransport},
+	}
+	httpAuth := webdav.HTTPClientWithBasicAuth(base, cfg.Username, cfg.Password)
 	cl, err := caldav.NewClient(httpAuth, cfg.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("caldav client: %w", err)
