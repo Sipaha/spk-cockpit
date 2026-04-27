@@ -36,6 +36,20 @@ func (a *App) Show() {
 	}
 }
 
+// ShowAt brings the main window forward and navigates the embedded React app
+// to `path` (e.g. "/standup"). The navigation is best-effort; if the JS bridge
+// is unavailable, the window still surfaces at its last route.
+func (a *App) ShowAt(path string) {
+	if a.ctx == nil {
+		return
+	}
+	wruntime.WindowShow(a.ctx)
+	// Use history.pushState so the React router (BrowserRouter) picks it up
+	// without a full reload. We dispatch popstate so listeners refresh.
+	js := "history.pushState(null,'',\"" + path + "\");window.dispatchEvent(new PopStateEvent('popstate'));"
+	wruntime.WindowExecJS(a.ctx, js)
+}
+
 // Run starts the Wails event loop. It blocks until the window is closed.
 // ready is invoked once the App is constructed (before the loop spins up) so callers
 // can capture a handle for tray actions.

@@ -199,18 +199,38 @@ func runStart(ctx context.Context) error {
 		_ = srv.Stop(context.Background())
 	}()
 
-	// Tray runs in a goroutine and forwards "Open window" / "Quit" to handlers.
+	// Tray runs in a goroutine. Click handlers call back into the daemon's services.
 	var winApp *window.App
-	trayBackend := tray.New(
-		func() {
+	trayActions := tray.Actions{
+		OpenWindow: func() {
 			if winApp != nil {
 				winApp.Show()
 			}
 		},
-		func() {
+		OpenStandup: func() {
+			if winApp != nil {
+				winApp.ShowAt("/standup")
+			}
+		},
+		StopTimer: func() {
+			if _, _, err := timerSvc.Stop(context.Background()); err != nil {
+				logger.Warn("tray: stop timer failed", "err", err)
+			}
+		},
+		RefreshSync: func() {
+			if caldavSyncer == nil {
+				logger.Warn("tray: caldav syncer not configured")
+				return
+			}
+			if err := caldavSyncer.TriggerNow(caldav.SourceName); err != nil {
+				logger.Warn("tray: refresh sync failed", "err", err)
+			}
+		},
+		Quit: func() {
 			cancel()
 		},
-	)
+	}
+	trayBackend := tray.New(trayActions)
 	go func() {
 		trayBackend.Run(nil, nil)
 	}()
@@ -221,7 +241,7 @@ func runStart(ctx context.Context) error {
 		}
 		return m
 	}
-	go tray.NewSubscriber(bus, trayBackend, mtgFetch).Run(ctx)
+	go tray.NewSubscriber(bus, trayBackend, todoSvc, mtgFetch).Run(ctx)
 
 	// Wails owns the main thread.
 	winErr := window.Run(webembed.DistFS, p.SocketFile, func(a *window.App) {
