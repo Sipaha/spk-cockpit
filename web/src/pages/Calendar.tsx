@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { RefreshCw, Settings as SettingsIcon } from "lucide-react";
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
 import { MeetingCard } from "../components/MeetingCard";
+import { CalDAVSettings } from "../components/CalDAVSettings";
 import { linkify } from "../lib/linkify";
 import type { Meeting } from "../lib/types";
 
@@ -21,15 +23,27 @@ export function Calendar() {
   const focusId = params.get("focus");
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  useEffect(() => {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  const reload = () => {
     const now = new Date();
     const from = Math.floor(startOfDay(now).getTime() / 1000) - 24 * 3600;
     const to = Math.floor(startOfDay(now).getTime() / 1000) + 30 * 24 * 3600;
-    void loadMeetings(from, to);
-  }, [loadMeetings]);
+    return loadMeetings(from, to);
+  };
 
-  // Auto-select + scroll-into-view when arriving with ?focus=<meetingId>.
-  // Used by the pre-meeting popup trigger and tray "Open standup"-style deep links.
+  useEffect(() => {
+    void reload();
+    Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")]).then(([u, n]) =>
+      setConfigured(Boolean(u.value && n.value)),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-select + scroll-into-view when arriving with ?focus=<meetingId>. Used
+  // by the pre-meeting popup trigger and tray deep links.
   useEffect(() => {
     if (!focusId || meetings.length === 0) return;
     const m = meetings.find((x) => x.id === focusId);
@@ -68,14 +82,75 @@ export function Calendar() {
     }
   }
 
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      await api.triggerSync("caldav").catch(() => undefined);
+      // Give the syncer a beat to upsert before re-reading.
+      await new Promise((r) => setTimeout(r, 1200));
+      await reload();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <div className="flex gap-6 h-full">
       <div className="flex-1 flex flex-col gap-4 max-w-2xl">
-        <h2 className="text-xl font-semibold">Calendar</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Calendar</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refresh}
+              disabled={refreshing}
+              title="Refresh"
+              className="p-2 rounded hover:bg-bgsub disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+            </button>
+            <button
+              onClick={() => setSettingsOpen((v) => !v)}
+              title="CalDAV settings"
+              className={`p-2 rounded hover:bg-bgsub ${settingsOpen ? "bg-bgsub" : ""}`}
+            >
+              <SettingsIcon size={16} />
+            </button>
+          </div>
+        </div>
+
+        {settingsOpen && (
+          <section className="border border-bgmute rounded p-4 bg-bgsub/50">
+            <CalDAVSettings
+              onSaved={() => {
+                Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")]).then(([u, n]) =>
+                  setConfigured(Boolean(u.value && n.value)),
+                );
+                void reload();
+              }}
+            />
+          </section>
+        )}
+
         {meetingsLoading && <div className="text-fgmute">loading…</div>}
-        {!meetingsLoading && meetings.length === 0 && (
+
+        {!meetingsLoading && meetings.length === 0 && configured === false && !settingsOpen && (
+          <div className="border border-bgmute rounded p-6 flex flex-col items-center gap-3 text-center">
+            <div className="text-fgmute text-sm">
+              CalDAV is not configured yet. Connect a calendar to see your meetings here.
+            </div>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="px-3 py-1 bg-accent text-bg rounded text-sm"
+            >
+              Configure CalDAV
+            </button>
+          </div>
+        )}
+
+        {!meetingsLoading && meetings.length === 0 && configured && (
           <div className="text-fgmute py-8 text-center">no meetings in window</div>
         )}
+
         {sections.map((section) =>
           section.items.length > 0 ? (
             <section key={section.label} className="flex flex-col gap-2">

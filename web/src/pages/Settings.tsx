@@ -1,114 +1,58 @@
 import { useEffect, useState } from "react";
-import { useTodoStore } from "../lib/store";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api";
-import { SyncStatusBadge } from "../components/SyncStatusBadge";
 
 export function Settings() {
-  const { syncStates, loadSyncStatus } = useTodoStore();
-
-  const [caldavUrl, setCaldavUrl] = useState("");
-  const [caldavUser, setCaldavUser] = useState("");
-  const [caldavPass, setCaldavPass] = useState("");
   const [defaultNotifyMin, setDefaultNotifyMin] = useState("5");
-  const [savingCaldav, setSavingCaldav] = useState(false);
-  const [savingNotifyMin, setSavingNotifyMin] = useState(false);
+  const [defaultPopupMin, setDefaultPopupMin] = useState("1");
+  const [savingNotify, setSavingNotify] = useState(false);
+  const [savingPopup, setSavingPopup] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    void loadSyncStatus();
-    void api.getKv("caldav.url").then((r) => r.value && setCaldavUrl(r.value));
-    void api.getKv("caldav.username").then((r) => r.value && setCaldavUser(r.value));
     void api.getKv("meeting.default_notify_min").then((r) => r.value && setDefaultNotifyMin(r.value));
-  }, [loadSyncStatus]);
+    void api.getKv("meeting.default_popup_min").then((r) => r.value && setDefaultPopupMin(r.value));
+  }, []);
 
-  async function saveCaldav() {
-    setSavingCaldav(true);
-    try {
-      await api.setKv("caldav.url", caldavUrl);
-      await api.setKv("caldav.username", caldavUser);
-      if (caldavPass) {
-        await api.setSecret("caldav_password", caldavPass);
-        setCaldavPass("");
-      }
-      setSavedAt(new Date().toLocaleTimeString());
-    } finally {
-      setSavingCaldav(false);
-    }
-  }
-
-  async function saveNotifyMin() {
-    setSavingNotifyMin(true);
+  async function saveNotify() {
+    setSavingNotify(true);
     try {
       await api.setKv("meeting.default_notify_min", defaultNotifyMin);
       setSavedAt(new Date().toLocaleTimeString());
     } finally {
-      setSavingNotifyMin(false);
+      setSavingNotify(false);
     }
   }
 
-  async function syncNow() {
-    await api.triggerSync("caldav");
-    setTimeout(() => void loadSyncStatus(), 1000);
+  async function savePopup() {
+    setSavingPopup(true);
+    try {
+      await api.setKv("meeting.default_popup_min", defaultPopupMin);
+      setSavedAt(new Date().toLocaleTimeString());
+    } finally {
+      setSavingPopup(false);
+    }
   }
-
-  const caldavState = syncStates.find((s) => s.source === "caldav");
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl">
       <h2 className="text-xl font-semibold">Settings</h2>
 
       <section className="flex flex-col gap-3">
-        <h3 className="text-fgmute uppercase text-xs">CalDAV</h3>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">URL</span>
-          <input
-            type="text"
-            value={caldavUrl}
-            onChange={(e) => setCaldavUrl(e.target.value)}
-            placeholder="https://caldav.example.com/calendars/you/"
-            className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">Username</span>
-          <input
-            type="text"
-            value={caldavUser}
-            onChange={(e) => setCaldavUser(e.target.value)}
-            className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">Password (leave blank to keep existing)</span>
-          <input
-            type="password"
-            value={caldavPass}
-            onChange={(e) => setCaldavPass(e.target.value)}
-            className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg"
-          />
-        </label>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={saveCaldav}
-            disabled={savingCaldav}
-            className="px-3 py-1 bg-accent text-bg rounded text-sm"
-          >
-            {savingCaldav ? "saving…" : "save credentials"}
-          </button>
-          <button
-            onClick={syncNow}
-            className="px-3 py-1 bg-bgsub border border-bgmute rounded text-sm hover:border-fgmute"
-          >
-            sync now
-          </button>
-          {caldavState && <SyncStatusBadge state={caldavState} />}
-        </div>
+        <h3 className="text-fgmute uppercase text-xs">Calendar</h3>
+        <p className="text-fgmute text-sm">
+          CalDAV credentials and sync controls live on the{" "}
+          <Link to="/calendar" className="text-accent hover:underline">
+            Calendar page
+          </Link>{" "}
+          (gear icon in the header).
+        </p>
       </section>
 
       <section className="flex flex-col gap-3">
         <h3 className="text-fgmute uppercase text-xs">Notifications</h3>
         <label className="flex flex-col gap-1 max-w-xs">
-          <span className="text-sm">Default minutes before meeting</span>
+          <span className="text-sm">DBus notification — minutes before meeting</span>
           <input
             type="number"
             min={0}
@@ -119,11 +63,31 @@ export function Settings() {
         </label>
         <div>
           <button
-            onClick={saveNotifyMin}
-            disabled={savingNotifyMin}
+            onClick={saveNotify}
+            disabled={savingNotify}
             className="px-3 py-1 bg-accent text-bg rounded text-sm"
           >
-            {savingNotifyMin ? "saving…" : "save"}
+            {savingNotify ? "saving…" : "save"}
+          </button>
+        </div>
+
+        <label className="flex flex-col gap-1 max-w-xs mt-3">
+          <span className="text-sm">Popup window — minutes before meeting</span>
+          <input
+            type="number"
+            min={0}
+            value={defaultPopupMin}
+            onChange={(e) => setDefaultPopupMin(e.target.value)}
+            className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg"
+          />
+        </label>
+        <div>
+          <button
+            onClick={savePopup}
+            disabled={savingPopup}
+            className="px-3 py-1 bg-accent text-bg rounded text-sm"
+          >
+            {savingPopup ? "saving…" : "save"}
           </button>
         </div>
       </section>
