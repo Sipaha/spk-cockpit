@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/spk/spk-cockpit/internal/secret"
 	"github.com/spk/spk-cockpit/internal/server"
 	"github.com/spk/spk-cockpit/internal/store"
+	"github.com/spk/spk-cockpit/internal/sync/caldav"
 	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 	"github.com/spk/spk-cockpit/internal/tray"
@@ -109,10 +111,31 @@ func runStart(ctx context.Context) error {
 	srv.Deps().Notes = noteSvc
 	srv.Deps().Secrets = secretSvc
 	srv.Deps().Kv = store.NewKvRepo(st.DB)
-	_ = syncStateRepo // wired in Plan Task 12 (CalDAV syncer)
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	caldavCfg := loadCaldavConfig(secretSvc, st.DB)
+	var caldavSyncer *caldav.Syncer
+	if caldavCfg != nil {
+		client, err := caldav.NewClient(*caldavCfg)
+		if err != nil {
+			logger.Warn("caldav client init failed; sync disabled", "err", err)
+		} else {
+			caldavSyncer = caldav.NewSyncer(caldav.SyncerConfig{
+				Client:   client,
+				Meetings: meetingSvc,
+				State:    syncStateRepo,
+				Clock:    clock.Real(),
+				Logger:   logger,
+				Bus:      bus,
+			})
+		}
+	}
+	if caldavSyncer != nil {
+		go caldavSyncer.Run(ctx)
+		srv.Deps().Sync = caldavSyncer
+	}
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -155,4 +178,23 @@ func runStart(ctx context.Context) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	return winErr
+}
+
+// loadCaldavConfig reads CalDAV credentials from the KV store and secret service.
+// Returns nil if any required value is missing or an error occurs.
+func loadCaldavConfig(secrets *secret.Service, db *sql.DB) *caldav.Config {
+	ctx := context.Background()
+	url, _, err := store.NewKvRepo(db).Get(ctx, "caldav.url")
+	if err != nil || url == "" {
+		return nil
+	}
+	username, _, err := store.NewKvRepo(db).Get(ctx, "caldav.username")
+	if err != nil || username == "" {
+		return nil
+	}
+	password, err := secrets.Get(ctx, "yandex_caldav")
+	if err != nil {
+		return nil
+	}
+	return &caldav.Config{BaseURL: url, Username: username, Password: password}
 }
