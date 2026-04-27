@@ -177,13 +177,30 @@ func runStart(ctx context.Context) error {
 			defaultNotifyMin = n
 		}
 	}
+	defaultPopupMin := 1
+	if v, ok, _ := store.NewKvRepo(st.DB).Get(ctx, "meeting.default_popup_min"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			defaultPopupMin = n
+		}
+	}
 
+	// winApp is bound by window.Run below; the popup callback references it via
+	// closure so it picks up the live handle once the window is up.
+	var winApp *window.App
 	scheduler := notify.NewScheduler(notify.SchedulerConfig{
-		Meetings:         meetingSvc,
-		Notifier:         notifier,
+		Meetings: meetingSvc,
+		Notifier: notifier,
+		Popup: func(m api.Meeting) {
+			if winApp == nil {
+				logger.Info("meeting popup ready but window not up yet", "id", m.ID, "title", m.Title)
+				return
+			}
+			winApp.ShowAt("/calendar?focus=" + m.ID)
+		},
 		Clock:            clock.Real(),
 		Logger:           logger,
 		DefaultNotifyMin: defaultNotifyMin,
+		DefaultPopupMin:  defaultPopupMin,
 	})
 	go scheduler.Run(ctx)
 
@@ -200,7 +217,7 @@ func runStart(ctx context.Context) error {
 	}()
 
 	// Tray runs in a goroutine. Click handlers call back into the daemon's services.
-	var winApp *window.App
+	// winApp is shared with the popup callback above (declared near the scheduler).
 	trayActions := tray.Actions{
 		OpenWindow: func() {
 			if winApp != nil {

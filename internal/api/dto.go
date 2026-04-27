@@ -130,6 +130,8 @@ type Meeting struct {
 	EndAt        int64         `json:"endAt"`
 	NotifyMin    *int          `json:"notifyMin,omitempty"`
 	NotifiedAt   *int64        `json:"notifiedAt,omitempty"`
+	PopupMin     *int          `json:"popupMin,omitempty"`
+	PopupFiredAt *int64        `json:"popupFiredAt,omitempty"`
 	Cancelled    bool          `json:"cancelled"`
 	CreatedAt    int64         `json:"createdAt"`
 	UpdatedAt    int64         `json:"updatedAt"`
@@ -143,6 +145,7 @@ type CreateMeetingRequest struct {
 	StartAt     int64  `json:"startAt"`
 	EndAt       int64  `json:"endAt"`
 	NotifyMin   *int   `json:"notifyMin,omitempty"`
+	PopupMin    *int   `json:"popupMin,omitempty"`
 }
 
 // UpdateMeetingRequest is the body of PATCH /api/meetings/{id}.
@@ -154,6 +157,7 @@ type UpdateMeetingRequest struct {
 	StartAt     *int64  `json:"startAt,omitempty"`
 	EndAt       *int64  `json:"endAt,omitempty"`
 	NotifyMin   *int    `json:"notifyMin,omitempty"`
+	PopupMin    *int    `json:"popupMin,omitempty"`
 }
 
 // Note is a markdown note attached to a meeting OR a todo.

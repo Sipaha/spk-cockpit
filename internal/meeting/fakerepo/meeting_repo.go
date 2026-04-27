@@ -123,6 +123,7 @@ func (r *Meeting) UpsertExternal(_ context.Context, m api.Meeting) (api.Meeting,
 			preserved.UpdatedAt = m.UpdatedAt
 			if m.StartAt != existing.StartAt {
 				preserved.NotifiedAt = nil
+				preserved.PopupFiredAt = nil
 			}
 			r.byID[id] = preserved
 			return preserved, false, nil
@@ -178,6 +179,40 @@ func (r *Meeting) MarkNotified(_ context.Context, id string, at int64) error {
 		return meeting.ErrNotFound
 	}
 	m.NotifiedAt = &at
+	r.byID[id] = m
+	return nil
+}
+
+// PendingPopup scans in memory for the popup channel.
+func (r *Meeting) PendingPopup(_ context.Context, now int64, defaultPopupMin int) ([]api.Meeting, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []api.Meeting
+	for id, m := range r.byID {
+		if r.deleted[id] || m.Cancelled || m.PopupFiredAt != nil {
+			continue
+		}
+		pm := defaultPopupMin
+		if m.PopupMin != nil {
+			pm = *m.PopupMin
+		}
+		if m.StartAt-int64(pm)*60 <= now && m.StartAt >= now {
+			out = append(out, m)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartAt < out[j].StartAt })
+	return out, nil
+}
+
+// MarkPopupFired sets popup_fired_at.
+func (r *Meeting) MarkPopupFired(_ context.Context, id string, at int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, ok := r.byID[id]
+	if !ok {
+		return meeting.ErrNotFound
+	}
+	m.PopupFiredAt = &at
 	r.byID[id] = m
 	return nil
 }

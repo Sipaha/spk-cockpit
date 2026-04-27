@@ -19,16 +19,18 @@ type MeetingRepo struct {
 // NewMeetingRepo constructs a MeetingRepo over db.
 func NewMeetingRepo(db *sql.DB) *MeetingRepo { return &MeetingRepo{db: db} }
 
+const meetingCols = `id, source, external_uid, external_etag, title, description, location,
+	       start_at, end_at, notify_min, notified_at, popup_min, popup_fired_at, cancelled, created_at, updated_at`
+
 // Create inserts a meeting. ID and timestamps must be set by caller.
 func (r *MeetingRepo) Create(ctx context.Context, m api.Meeting) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO meetings(id, source, external_uid, external_etag, title, description, location,
-		                     start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO meetings(`+meetingCols+`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, m.ID, string(m.Source), nullStr(m.ExternalUID), nullStr(m.ExternalETag),
 		m.Title, m.Description, m.Location,
-		m.StartAt, m.EndAt, m.NotifyMin, m.NotifiedAt, boolToInt(m.Cancelled),
-		m.CreatedAt, m.UpdatedAt)
+		m.StartAt, m.EndAt, m.NotifyMin, m.NotifiedAt, m.PopupMin, m.PopupFiredAt,
+		boolToInt(m.Cancelled), m.CreatedAt, m.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert meeting: %w", err)
 	}
@@ -37,10 +39,7 @@ func (r *MeetingRepo) Create(ctx context.Context, m api.Meeting) error {
 
 // Get returns a non-deleted meeting by id.
 func (r *MeetingRepo) Get(ctx context.Context, id string) (api.Meeting, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT id, source, external_uid, external_etag, title, description, location,
-		       start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at
-		FROM meetings WHERE id = ? AND deleted_at IS NULL`, id)
+	row := r.db.QueryRowContext(ctx, `SELECT `+meetingCols+` FROM meetings WHERE id = ? AND deleted_at IS NULL`, id)
 	m, err := scanMeeting(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return api.Meeting{}, meeting.ErrNotFound
@@ -56,10 +55,7 @@ func (r *MeetingRepo) Update(ctx context.Context, id string, mutate func(*api.Me
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	row := tx.QueryRowContext(ctx, `
-		SELECT id, source, external_uid, external_etag, title, description, location,
-		       start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at
-		FROM meetings WHERE id = ? AND deleted_at IS NULL`, id)
+	row := tx.QueryRowContext(ctx, `SELECT `+meetingCols+` FROM meetings WHERE id = ? AND deleted_at IS NULL`, id)
 	m, err := scanMeeting(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return api.Meeting{}, meeting.ErrNotFound
@@ -72,12 +68,13 @@ func (r *MeetingRepo) Update(ctx context.Context, id string, mutate func(*api.Me
 	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE meetings SET source=?, external_uid=?, external_etag=?, title=?, description=?, location=?,
-		                    start_at=?, end_at=?, notify_min=?, notified_at=?, cancelled=?, updated_at=?
+		                    start_at=?, end_at=?, notify_min=?, notified_at=?, popup_min=?, popup_fired_at=?,
+		                    cancelled=?, updated_at=?
 		WHERE id=?`,
 		string(m.Source), nullStr(m.ExternalUID), nullStr(m.ExternalETag),
 		m.Title, m.Description, m.Location,
-		m.StartAt, m.EndAt, m.NotifyMin, m.NotifiedAt, boolToInt(m.Cancelled),
-		m.UpdatedAt, m.ID)
+		m.StartAt, m.EndAt, m.NotifyMin, m.NotifiedAt, m.PopupMin, m.PopupFiredAt,
+		boolToInt(m.Cancelled), m.UpdatedAt, m.ID)
 	if err != nil {
 		return api.Meeting{}, fmt.Errorf("update meeting: %w", err)
 	}
@@ -115,9 +112,7 @@ func (r *MeetingRepo) List(ctx context.Context, f meeting.MeetingFilter) ([]api.
 		conds = append(conds, "start_at <= ?")
 		args = append(args, f.ToUnix)
 	}
-	q := `SELECT id, source, external_uid, external_etag, title, description, location,` + //nolint:gosec // condition values are controlled literals, not user input
-		`             start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at` +
-		`      FROM meetings WHERE ` + strings.Join(conds, " AND ") + ` ORDER BY start_at ASC`
+	q := `SELECT ` + meetingCols + ` FROM meetings WHERE ` + strings.Join(conds, " AND ") + ` ORDER BY start_at ASC` //nolint:gosec // condition values are controlled literals, not user input
 	if f.Limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", f.Limit) //nolint:gosec // controlled int
 	}
@@ -137,7 +132,8 @@ func (r *MeetingRepo) List(ctx context.Context, f meeting.MeetingFilter) ([]api.
 	return out, rows.Err()
 }
 
-// UpsertExternal inserts or updates by (source, external_uid). When start_at changes, notified_at resets.
+// UpsertExternal inserts or updates by (source, external_uid). When start_at changes,
+// notified_at AND popup_fired_at reset so re-arming works for both notification channels.
 func (r *MeetingRepo) UpsertExternal(ctx context.Context, m api.Meeting) (api.Meeting, bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -145,22 +141,18 @@ func (r *MeetingRepo) UpsertExternal(ctx context.Context, m api.Meeting) (api.Me
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	row := tx.QueryRowContext(ctx, `
-		SELECT id, source, external_uid, external_etag, title, description, location,
-		       start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at
-		FROM meetings WHERE source = ? AND external_uid = ? AND deleted_at IS NULL`,
+	row := tx.QueryRowContext(ctx, `SELECT `+meetingCols+` FROM meetings WHERE source = ? AND external_uid = ? AND deleted_at IS NULL`,
 		string(m.Source), m.ExternalUID)
 	existing, err := scanMeeting(row)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO meetings(id, source, external_uid, external_etag, title, description, location,
-			                     start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			INSERT INTO meetings(`+meetingCols+`)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			m.ID, string(m.Source), m.ExternalUID, nullStr(m.ExternalETag),
 			m.Title, m.Description, m.Location,
-			m.StartAt, m.EndAt, m.NotifyMin, m.NotifiedAt, boolToInt(m.Cancelled),
-			m.CreatedAt, m.UpdatedAt,
+			m.StartAt, m.EndAt, m.NotifyMin, m.NotifiedAt, m.PopupMin, m.PopupFiredAt,
+			boolToInt(m.Cancelled), m.CreatedAt, m.UpdatedAt,
 		); err != nil {
 			return api.Meeting{}, false, fmt.Errorf("insert external: %w", err)
 		}
@@ -182,14 +174,15 @@ func (r *MeetingRepo) UpsertExternal(ctx context.Context, m api.Meeting) (api.Me
 		preserved.UpdatedAt = m.UpdatedAt
 		if m.StartAt != existing.StartAt {
 			preserved.NotifiedAt = nil
+			preserved.PopupFiredAt = nil
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE meetings SET external_etag=?, title=?, description=?, location=?,
-			                    start_at=?, end_at=?, notified_at=?, cancelled=?, updated_at=?
+			                    start_at=?, end_at=?, notified_at=?, popup_fired_at=?, cancelled=?, updated_at=?
 			WHERE id=?`,
 			nullStr(preserved.ExternalETag), preserved.Title, preserved.Description, preserved.Location,
-			preserved.StartAt, preserved.EndAt, preserved.NotifiedAt, boolToInt(preserved.Cancelled),
-			preserved.UpdatedAt, preserved.ID); err != nil {
+			preserved.StartAt, preserved.EndAt, preserved.NotifiedAt, preserved.PopupFiredAt,
+			boolToInt(preserved.Cancelled), preserved.UpdatedAt, preserved.ID); err != nil {
 			return api.Meeting{}, false, fmt.Errorf("update external: %w", err)
 		}
 		if err := tx.Commit(); err != nil {
@@ -211,11 +204,10 @@ func (r *MeetingRepo) MarkCancelled(ctx context.Context, source api.MeetingSourc
 	return nil
 }
 
-// PendingNotification returns meetings ready to be notified.
+// PendingNotification returns meetings ready to be notified via the DBus channel.
 func (r *MeetingRepo) PendingNotification(ctx context.Context, now int64, defaultNotifyMin int) ([]api.Meeting, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, source, external_uid, external_etag, title, description, location,
-		       start_at, end_at, notify_min, notified_at, cancelled, created_at, updated_at
+		SELECT `+meetingCols+`
 		FROM meetings
 		WHERE deleted_at IS NULL
 		  AND cancelled = 0
@@ -248,16 +240,52 @@ func (r *MeetingRepo) MarkNotified(ctx context.Context, id string, at int64) err
 	return nil
 }
 
+// PendingPopup returns meetings ready for the on-screen window popup. Independent
+// from PendingNotification: each channel has its own time threshold and antifire marker.
+func (r *MeetingRepo) PendingPopup(ctx context.Context, now int64, defaultPopupMin int) ([]api.Meeting, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+meetingCols+`
+		FROM meetings
+		WHERE deleted_at IS NULL
+		  AND cancelled = 0
+		  AND popup_fired_at IS NULL
+		  AND start_at - COALESCE(popup_min, ?) * 60 <= ?
+		  AND start_at >= ?
+		ORDER BY start_at ASC`,
+		defaultPopupMin, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("pending popup: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []api.Meeting
+	for rows.Next() {
+		m, err := scanMeeting(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// MarkPopupFired sets popup_fired_at on a single row.
+func (r *MeetingRepo) MarkPopupFired(ctx context.Context, id string, at int64) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE meetings SET popup_fired_at=? WHERE id=?`, at, id)
+	if err != nil {
+		return fmt.Errorf("mark popup fired: %w", err)
+	}
+	return nil
+}
+
 func scanMeeting(s sessionScanner) (api.Meeting, error) {
 	var m api.Meeting
 	var srcStr string
 	var extUID, extETag sql.NullString
-	var notifyMin sql.NullInt64
-	var notifiedAt sql.NullInt64
+	var notifyMin, notifiedAt, popupMin, popupFiredAt sql.NullInt64
 	var cancelledI int
 	if err := s.Scan(&m.ID, &srcStr, &extUID, &extETag,
 		&m.Title, &m.Description, &m.Location,
-		&m.StartAt, &m.EndAt, &notifyMin, &notifiedAt, &cancelledI,
+		&m.StartAt, &m.EndAt, &notifyMin, &notifiedAt, &popupMin, &popupFiredAt, &cancelledI,
 		&m.CreatedAt, &m.UpdatedAt); err != nil {
 		return api.Meeting{}, err
 	}
@@ -275,6 +303,14 @@ func scanMeeting(s sessionScanner) (api.Meeting, error) {
 	if notifiedAt.Valid {
 		v := notifiedAt.Int64
 		m.NotifiedAt = &v
+	}
+	if popupMin.Valid {
+		v := int(popupMin.Int64)
+		m.PopupMin = &v
+	}
+	if popupFiredAt.Valid {
+		v := popupFiredAt.Int64
+		m.PopupFiredAt = &v
 	}
 	m.Cancelled = cancelledI != 0
 	return m, nil

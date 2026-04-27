@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
 import { MeetingCard } from "../components/MeetingCard";
+import { linkify } from "../lib/linkify";
 import type { Meeting } from "../lib/types";
 
 function startOfDay(d: Date): Date {
@@ -15,6 +17,9 @@ export function Calendar() {
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [noteBody, setNoteBody] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [params] = useSearchParams();
+  const focusId = params.get("focus");
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     const now = new Date();
@@ -22,6 +27,17 @@ export function Calendar() {
     const to = Math.floor(startOfDay(now).getTime() / 1000) + 30 * 24 * 3600;
     void loadMeetings(from, to);
   }, [loadMeetings]);
+
+  // Auto-select + scroll-into-view when arriving with ?focus=<meetingId>.
+  // Used by the pre-meeting popup trigger and tray "Open standup"-style deep links.
+  useEffect(() => {
+    if (!focusId || meetings.length === 0) return;
+    const m = meetings.find((x) => x.id === focusId);
+    if (!m) return;
+    setSelected(m);
+    const el = cardRefs.current.get(m.id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusId, meetings]);
 
   useEffect(() => {
     if (!selected) {
@@ -65,12 +81,19 @@ export function Calendar() {
             <section key={section.label} className="flex flex-col gap-2">
               <h3 className="text-fgmute text-xs uppercase">{section.label}</h3>
               {section.items.map((m) => (
-                <MeetingCard
+                <div
                   key={m.id}
-                  meeting={m}
-                  selected={selected?.id === m.id}
-                  onClick={setSelected}
-                />
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(m.id, el);
+                    else cardRefs.current.delete(m.id);
+                  }}
+                >
+                  <MeetingCard
+                    meeting={m}
+                    selected={selected?.id === m.id}
+                    onClick={setSelected}
+                  />
+                </div>
               ))}
             </section>
           ) : null,
@@ -80,7 +103,14 @@ export function Calendar() {
       {selected && (
         <aside className="w-96 flex flex-col gap-3 border-l border-bgmute pl-4">
           <h3 className="font-semibold">{selected.title}</h3>
-          {selected.description && <p className="text-fgmute text-sm">{selected.description}</p>}
+          {selected.description && (
+            <p className="text-fgmute text-sm whitespace-pre-wrap">
+              {linkify(selected.description)}
+            </p>
+          )}
+          {selected.location && (
+            <p className="text-fgmute text-sm">📍 {linkify(selected.location)}</p>
+          )}
           <div className="text-fgmute text-xs">
             {new Date(selected.startAt * 1000).toLocaleString()}
           </div>

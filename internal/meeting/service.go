@@ -199,3 +199,20 @@ func (s *Service) MarkNotified(ctx context.Context, id string) error {
 	})
 	return nil
 }
+
+// PendingPopup proxies to the repo (used by the popup scheduler track).
+func (s *Service) PendingPopup(ctx context.Context, defaultPopupMin int) ([]api.Meeting, error) {
+	return s.repo.PendingPopup(ctx, s.clock.Now().Unix(), defaultPopupMin)
+}
+
+// MarkPopupFired records that the on-screen popup was shown for a meeting.
+func (s *Service) MarkPopupFired(ctx context.Context, id string) error {
+	now := s.clock.Now().Unix()
+	if err := s.repo.MarkPopupFired(ctx, id, now); err != nil {
+		return err
+	}
+	s.publish(api.EventMeetingPopupRequested, api.MeetingPopupRequestedData{
+		MeetingID: id, FiredAt: now,
+	})
+	return nil
+}

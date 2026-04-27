@@ -36,6 +36,9 @@ type MeetingRepo interface { //nolint:revive // domain naming intentional
 
 	PendingNotification(ctx context.Context, now int64, defaultNotifyMin int) ([]api.Meeting, error)
 	MarkNotified(ctx context.Context, id string, at int64) error
+
+	PendingPopup(ctx context.Context, now int64, defaultPopupMin int) ([]api.Meeting, error)
+	MarkPopupFired(ctx context.Context, id string, at int64) error
 }
 
 // SyncStateRepo tracks per-source sync cursors and last-error strings.

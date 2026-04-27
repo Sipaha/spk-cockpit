@@ -11,6 +11,7 @@ const (
 	EventMeetingUpserted          = "meeting.upserted"
 	EventMeetingDeleted           = "meeting.deleted"
 	EventMeetingNotificationFired = "meeting.notification_fired"
+	EventMeetingPopupRequested    = "meeting.popup_requested"
 	EventNoteUpserted             = "note.upserted"
 	EventSyncStateChanged         = "sync.state_changed"
 )
@@ -71,6 +72,12 @@ type MeetingDeletedData struct {
 
 // MeetingNotificationFiredData is the payload of EventMeetingNotificationFired.
 type MeetingNotificationFiredData struct {
+	MeetingID string `json:"meetingId"`
+	FiredAt   int64  `json:"firedAt"`
+}
+
+// MeetingPopupRequestedData is the payload of EventMeetingPopupRequested.
+type MeetingPopupRequestedData struct {
 	MeetingID string `json:"meetingId"`
 	FiredAt   int64  `json:"firedAt"`
 }
