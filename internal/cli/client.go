@@ -180,5 +180,65 @@ func (c *Client) ActiveTimer(ctx context.Context) (*api.TimerSession, error) {
 	return out, nil
 }
 
+// ListMeetings lists upcoming meetings in [fromUnix, toUnix].
+func (c *Client) ListMeetings(ctx context.Context, fromUnix, toUnix int64, includeCancelled bool) ([]api.Meeting, error) {
+	q := fmt.Sprintf("/api/meetings?from=%d&to=%d", fromUnix, toUnix)
+	if includeCancelled {
+		q += "&includeCancelled=1"
+	}
+	var out []api.Meeting
+	if err := c.getJSON(ctx, q, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// NextMeeting returns the earliest upcoming meeting or nil.
+func (c *Client) NextMeeting(ctx context.Context) (*api.Meeting, error) {
+	resp, err := c.do(ctx, "GET", "/api/meetings/next", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out *api.Meeting
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetSecret encrypts and stores a value under name.
+func (c *Client) SetSecret(ctx context.Context, name, value string) error {
+	b, err := json.Marshal(api.SetSecretRequest{Value: value})
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	resp, err := c.do(ctx, "PUT", "/api/secrets/"+name, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return nil
+}
+
+// ListSecretNames returns all known secret names (no values).
+func (c *Client) ListSecretNames(ctx context.Context) ([]api.Secret, error) {
+	var out []api.Secret
+	if err := c.getJSON(ctx, "/api/secrets", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// TriggerSync forces a sync for the named source (e.g. "caldav").
+func (c *Client) TriggerSync(ctx context.Context, source string) error {
+	resp, err := c.do(ctx, "POST", "/api/sync/"+source, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return nil
+}
+
 // ErrDaemonNotRunning indicates the daemon is unreachable. (Reserved for future use.)
 var ErrDaemonNotRunning = errors.New("daemon not running")
