@@ -11,7 +11,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "cockpit",
+	Use:           "spk-cockpit",
 	Short:         "spk-cockpit — personal productivity tray app",
 	SilenceUsage:  true,
 	SilenceErrors: true,

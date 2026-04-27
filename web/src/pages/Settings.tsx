@@ -59,12 +59,6 @@ export function Settings() {
 
       <section className="flex flex-col gap-3">
         <h3 className="text-fgmute uppercase text-xs">CalDAV</h3>
-        <p className="text-fgmute text-xs">
-          Works with any CalDAV server (Yandex, Fastmail, iCloud, Nextcloud, Posteo, …). Yandex
-          users: generate an app-password at id.yandex.ru → Security → App passwords; the
-          collection URL looks like{" "}
-          <code className="text-fg">https://caldav.yandex.ru/calendars/&lt;you&gt;/events-default/</code>.
-        </p>
         <label className="flex flex-col gap-1">
           <span className="text-sm">URL</span>
           <input

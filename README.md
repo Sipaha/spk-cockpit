@@ -40,35 +40,35 @@ To autostart on login, install the systemd-user unit:
 
 ## CLI
 
-The `cockpit` CLI talks to the running daemon over its Unix socket — same code path as the UI.
+The `spk-cockpit` CLI talks to the running daemon over its Unix socket — same code path as the UI.
 
 ```bash
 # todos
-cockpit todo add "Review MR !1245" -p high -t backend
-cockpit todo list                                       # use -a for done/cancelled
-cockpit todo start abc123                               # set in_progress (short id suffix)
-cockpit todo update abc123 -p urgent --due 2026-05-01
-cockpit todo done abc123
-cockpit todo rm abc123
+spk-cockpit todo add "Review MR !1245" -p high -t backend
+spk-cockpit todo list                                       # use -a for done/cancelled
+spk-cockpit todo start abc123                               # set in_progress (short id suffix)
+spk-cockpit todo update abc123 -p urgent --due 2026-05-01
+spk-cockpit todo done abc123
+spk-cockpit todo rm abc123
 
 # timer
-cockpit timer start abc123
-cockpit timer status
-cockpit timer stop
+spk-cockpit timer start abc123
+spk-cockpit timer status
+spk-cockpit timer stop
 
 # calendar / secrets
-cockpit meeting list -d 14
-cockpit meeting next
-echo "my-app-password" | cockpit secret set caldav_password
+spk-cockpit meeting list -d 14
+spk-cockpit meeting next
+echo "my-app-password" | spk-cockpit secret set caldav_password
 
 # standup
-cockpit standup                       # markdown for today
-cockpit standup --date 2026-04-26     # markdown for any day
+spk-cockpit standup                       # markdown for today
+spk-cockpit standup --date 2026-04-26     # markdown for any day
 
 # lifecycle
-cockpit start                         # launches tray + window + daemon
-cockpit install --autostart           # systemd-user unit
-cockpit stop                          # stop running daemon
+spk-cockpit start                         # launches tray + window + daemon
+spk-cockpit install --autostart           # systemd-user unit
+spk-cockpit stop                          # stop running daemon
 ```
 
 ## Configuration
@@ -78,7 +78,7 @@ Static config lives in `~/.config/spk-cockpit/config.yml` (theme, log level, syn
 GitLab and Tracker integrations for the standup helper are optional; configure them via:
 
 ```bash
-cockpit secret set gitlab_token       # personal access token, read_api scope
+spk-cockpit secret set gitlab_token       # personal access token, read_api scope
 
 SOCK=~/.local/state/spk-cockpit/cockpit.sock
 curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \

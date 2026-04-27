@@ -296,13 +296,7 @@ func loadCaldavConfig(secrets *secret.Service, db *sql.DB) *caldav.Config {
 	}
 	password, err := secrets.Get(ctx, "caldav_password")
 	if err != nil || password == "" {
-		// Backward compatibility: early builds stored this under "yandex_caldav".
-		// Migrate transparently so existing installs don't have to re-enter the password.
-		legacy, lerr := secrets.Get(ctx, "yandex_caldav")
-		if lerr != nil || legacy == "" {
-			return nil
-		}
-		password = legacy
+		return nil
 	}
 	return &caldav.Config{BaseURL: url, Username: username, Password: password}
 }
