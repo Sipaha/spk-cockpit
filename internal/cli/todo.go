@@ -137,13 +137,89 @@ var todoRmCmd = &cobra.Command{
 	},
 }
 
+var todoStartCmd = &cobra.Command{
+	Use:   "start <id-suffix>",
+	Short: "Mark a todo as in_progress",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		id, err := resolveID(c, args[0])
+		if err != nil {
+			return err
+		}
+		st := api.StatusInProgress
+		if _, err := c.UpdateTodo(context.Background(), id, api.UpdateTodoRequest{Status: &st}); err != nil {
+			return err
+		}
+		fmt.Println("in_progress")
+		return nil
+	},
+}
+
+var todoUpdateFlags struct {
+	title    string
+	notes    string
+	priority string
+	due      string
+}
+
+var todoUpdateCmd = &cobra.Command{
+	Use:   "update <id-suffix>",
+	Short: "Update a todo (title, notes, priority, due)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		id, err := resolveID(c, args[0])
+		if err != nil {
+			return err
+		}
+		var req api.UpdateTodoRequest
+		if cmd.Flags().Changed("title") {
+			req.Title = &todoUpdateFlags.title
+		}
+		if cmd.Flags().Changed("notes") {
+			req.Notes = &todoUpdateFlags.notes
+		}
+		if cmd.Flags().Changed("priority") {
+			p := parsePriority(todoUpdateFlags.priority)
+			req.Priority = &p
+		}
+		if cmd.Flags().Changed("due") {
+			if todoUpdateFlags.due == "" {
+				return fmt.Errorf("--due requires a value (clearing is not yet supported)")
+			}
+			ts, err := parseDue(todoUpdateFlags.due)
+			if err != nil {
+				return err
+			}
+			req.DueAt = &ts
+		}
+		t, err := c.UpdateTodo(context.Background(), id, req)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("updated %s: [%s] %s\n", t.ID, priorityStr(t.Priority), t.Title)
+		return nil
+	},
+}
+
 func init() {
 	todoAddCmd.Flags().StringVarP(&todoAddFlags.priority, "priority", "p", "normal", "low|normal|high|urgent")
 	todoAddCmd.Flags().StringSliceVarP(&todoAddFlags.tags, "tag", "t", nil, "tag (repeatable)")
 	todoAddCmd.Flags().StringVar(&todoAddFlags.due, "due", "", "YYYY-MM-DD or unix seconds")
 	todoAddCmd.Flags().StringVarP(&todoAddFlags.notes, "notes", "n", "", "notes (markdown)")
 	todoListCmd.Flags().BoolP("all", "a", false, "include done/cancelled")
-	todoCmd.AddCommand(todoAddCmd, todoListCmd, todoDoneCmd, todoRmCmd)
+	todoUpdateCmd.Flags().StringVar(&todoUpdateFlags.title, "title", "", "new title")
+	todoUpdateCmd.Flags().StringVarP(&todoUpdateFlags.notes, "notes", "n", "", "new notes (markdown)")
+	todoUpdateCmd.Flags().StringVarP(&todoUpdateFlags.priority, "priority", "p", "", "low|normal|high|urgent")
+	todoUpdateCmd.Flags().StringVar(&todoUpdateFlags.due, "due", "", "YYYY-MM-DD or unix seconds")
+	todoCmd.AddCommand(todoAddCmd, todoListCmd, todoDoneCmd, todoRmCmd, todoStartCmd, todoUpdateCmd)
 	rootCmd.AddCommand(todoCmd)
 }
 
