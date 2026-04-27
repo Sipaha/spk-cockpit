@@ -36,6 +36,15 @@ func (a *App) Show() {
 	}
 }
 
+// Quit stops the Wails event loop so the surrounding process can exit. Used by
+// the tray Quit action — without this, cancelling ctx only stops the HTTP/SSE
+// server but Wails keeps the main thread alive until the window is closed manually.
+func (a *App) Quit() {
+	if a.ctx != nil {
+		wruntime.Quit(a.ctx)
+	}
+}
+
 // ShowAt brings the main window forward and navigates the embedded React app
 // to `path` (e.g. "/standup"). The navigation is best-effort; if the JS bridge
 // is unavailable, the window still surfaces at its last route.

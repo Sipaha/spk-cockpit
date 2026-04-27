@@ -229,6 +229,9 @@ func runStart(ctx context.Context) error {
 	// winApp is bound by window.Run below; tray click handlers reference it via
 	// closure so they pick up the live handle once the window is up.
 	var winApp *window.App
+	// trayBackend is declared up-front so the shutdown goroutine (defined before
+	// the tray action wiring) can call into it via closure.
+	var trayBackend tray.Backend
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -240,6 +243,12 @@ func runStart(ctx context.Context) error {
 		<-ctx.Done()
 		logger.Info("shutting down")
 		_ = srv.Stop(context.Background())
+		if trayBackend != nil {
+			trayBackend.Quit()
+		}
+		if winApp != nil {
+			winApp.Quit()
+		}
 	}()
 
 	// Tray runs in a goroutine. Click handlers call back into the daemon's services.
@@ -269,7 +278,7 @@ func runStart(ctx context.Context) error {
 			cancel()
 		},
 	}
-	trayBackend := tray.New(trayActions)
+	trayBackend = tray.New(trayActions)
 	go func() {
 		trayBackend.Run(nil, nil)
 	}()
