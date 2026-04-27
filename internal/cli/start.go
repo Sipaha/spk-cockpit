@@ -102,19 +102,20 @@ func runStart(ctx context.Context) error {
 
 	// Tray runs in a goroutine and forwards "Open window" / "Quit" to handlers.
 	var winApp *window.App
+	trayBackend := tray.New(
+		func() {
+			if winApp != nil {
+				winApp.Show()
+			}
+		},
+		func() {
+			cancel()
+		},
+	)
 	go func() {
-		t := tray.New(
-			func() {
-				if winApp != nil {
-					winApp.Show()
-				}
-			},
-			func() {
-				cancel()
-			},
-		)
-		t.Run(nil, nil)
+		trayBackend.Run(nil, nil)
 	}()
+	go tray.NewSubscriber(bus, trayBackend).Run(ctx)
 
 	// Wails owns the main thread.
 	winErr := window.Run(webembed.DistFS, p.SocketFile, func(a *window.App) {
