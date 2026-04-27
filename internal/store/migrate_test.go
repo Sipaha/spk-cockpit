@@ -25,9 +25,9 @@ func TestMigrate_AppliesOnFreshDB(t *testing.T) {
 		require.NoError(t, rows.Scan(&v))
 		versions = append(versions, v)
 	}
-	require.Equal(t, []int{1, 2}, versions)
+	require.Equal(t, []int{1, 2, 3}, versions)
 
-	for _, table := range []string{"todos", "tags", "todo_tags", "todo_events", "kv", "timer_sessions"} {
+	for _, table := range []string{"todos", "tags", "todo_tags", "todo_events", "kv", "timer_sessions", "meetings", "notes", "secrets", "sync_state"} {
 		var n int
 		err := s.DB.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n)
 		require.NoError(t, err, "table %s missing", table)
