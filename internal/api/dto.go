@@ -215,17 +215,17 @@ const (
 
 // StandupItem is one row in a standup report (todo, commit, or tracker activity).
 type StandupItem struct {
-	Source  StandupItemSource `json:"source"`
-	Title   string            `json:"title"`
-	Detail  string            `json:"detail,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	RefID   string            `json:"refId,omitempty"`
-	At      int64             `json:"at"`
+	Source StandupItemSource `json:"source"`
+	Title  string            `json:"title"`
+	Detail string            `json:"detail,omitempty"`
+	URL    string            `json:"url,omitempty"`
+	RefID  string            `json:"refId,omitempty"`
+	At     int64             `json:"at"`
 }
 
 // StandupReport is the full standup payload returned by GET /api/standup.
 type StandupReport struct {
-	Day       string        `json:"day"`       // YYYY-MM-DD (local TZ of generation)
+	Day       string        `json:"day"` // YYYY-MM-DD (local TZ of generation)
 	Yesterday []StandupItem `json:"yesterday"`
 	Today     []StandupItem `json:"today"`
 	Blockers  []StandupItem `json:"blockers"`
