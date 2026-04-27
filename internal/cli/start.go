@@ -17,6 +17,7 @@ import (
 	"github.com/spk/spk-cockpit/internal/server"
 	"github.com/spk/spk-cockpit/internal/store"
 	"github.com/spk/spk-cockpit/internal/todo"
+	"github.com/spk/spk-cockpit/internal/tray"
 	"github.com/spk/spk-cockpit/internal/window"
 	webembed "github.com/spk/spk-cockpit/web/embed"
 )
@@ -94,8 +95,26 @@ func runStart(ctx context.Context) error {
 		_ = srv.Stop(context.Background())
 	}()
 
+	// Tray runs in a goroutine and forwards "Open window" / "Quit" to handlers.
+	var winApp *window.App
+	go func() {
+		t := tray.New(
+			func() {
+				if winApp != nil {
+					winApp.Show()
+				}
+			},
+			func() {
+				cancel()
+			},
+		)
+		t.Run(nil, nil)
+	}()
+
 	// Wails owns the main thread.
-	winErr := window.Run(webembed.DistFS, p.SocketFile, nil)
+	winErr := window.Run(webembed.DistFS, p.SocketFile, func(a *window.App) {
+		winApp = a
+	})
 	logger.Info("window closed", "err", winErr)
 
 	cancel()
