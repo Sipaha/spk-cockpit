@@ -121,4 +121,4 @@ For frontend hot-reload run `cd web && pnpm dev`; the daemon serves the embedded
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE). Third-party copyright notices and license texts are reproduced in [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) (regenerate with `make licenses`).

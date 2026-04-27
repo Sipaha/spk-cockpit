@@ -1,4 +1,4 @@
-.PHONY: build build-fast web-build test test-unit lint fmt tidy clean run
+.PHONY: build build-fast web-build test test-unit lint fmt tidy clean run licenses
 
 GO ?= go
 BUILD_DIR := build/bin
@@ -35,3 +35,6 @@ clean:
 
 run: build-fast
 	$(BIN) start --foreground
+
+licenses:
+	./scripts/gen-third-party-licenses.sh
