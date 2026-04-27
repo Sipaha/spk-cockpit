@@ -2,6 +2,8 @@
 
 Personal productivity tray app — todo list with prioritization, filtering, history, and a single-binary architecture (Go + embedded React UI). Linux first.
 
+Licensed under the [Apache License 2.0](LICENSE). Free for personal and commercial use; forks must declare their modifications and may not redistribute under the `spk-cockpit` name (see §4(b) and §6 of the license).
+
 ## Status
 
 ### Phase 1 ✅
