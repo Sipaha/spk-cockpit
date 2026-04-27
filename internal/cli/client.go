@@ -240,5 +240,18 @@ func (c *Client) TriggerSync(ctx context.Context, source string) error {
 	return nil
 }
 
+// Standup fetches the standup report for the given date (YYYY-MM-DD or empty for today).
+func (c *Client) Standup(ctx context.Context, date string) (api.StandupReport, error) {
+	path := "/api/standup"
+	if date != "" {
+		path += "?date=" + date
+	}
+	var out api.StandupReport
+	if err := c.getJSON(ctx, path, &out); err != nil {
+		return api.StandupReport{}, err
+	}
+	return out, nil
+}
+
 // ErrDaemonNotRunning indicates the daemon is unreachable. (Reserved for future use.)
 var ErrDaemonNotRunning = errors.New("daemon not running")
