@@ -54,6 +54,9 @@ func (h *HTTPSource) CommitsBy(ctx context.Context, author string, since, until 
 		if e.PushData == nil || e.PushData.CommitTitle == "" {
 			continue
 		}
+		if e.ProjectFullPath == "" {
+			continue
+		}
 		out = append(out, Commit{
 			SHA:     e.PushData.CommitTo,
 			Title:   e.PushData.CommitTitle,
@@ -130,7 +133,7 @@ func (h *HTTPSource) fetchEvents(ctx context.Context, userID int, since, until t
 	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
 		return nil, err
 	}
-	out := events[:0]
+	out := events[:0] // reuse backing array; events is not referenced after this point
 	for _, e := range events {
 		if e.CreatedAt.Before(since) || !e.CreatedAt.Before(until) {
 			continue

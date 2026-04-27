@@ -13,7 +13,7 @@ var ErrNotConfigured = errors.New("gitlab: not configured")
 
 // Commit is a minimal commit record for standup display.
 type Commit struct {
-	SHA     string    // 40-char hash
+	SHA     string    // commit SHA (full or abbreviated, as returned by the API)
 	Title   string    // commit message subject (first line)
 	URL     string    // https://gitlab.example.com/group/proj/-/commit/<sha>
 	Project string    // "group/project"
