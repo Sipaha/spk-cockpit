@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/clock"
 	"github.com/spk/spk-cockpit/internal/eventbus"
 	cockpitlog "github.com/spk/spk-cockpit/internal/log"
@@ -192,7 +193,14 @@ func runStart(ctx context.Context) error {
 	go func() {
 		trayBackend.Run(nil, nil)
 	}()
-	go tray.NewSubscriber(bus, trayBackend).Run(ctx)
+	mtgFetch := func() *api.Meeting {
+		m, err := meetingSvc.Next(context.Background())
+		if err != nil {
+			return nil
+		}
+		return m
+	}
+	go tray.NewSubscriber(bus, trayBackend, mtgFetch).Run(ctx)
 
 	// Wails owns the main thread.
 	winErr := window.Run(webembed.DistFS, p.SocketFile, func(a *window.App) {
