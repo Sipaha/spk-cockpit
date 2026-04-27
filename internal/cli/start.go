@@ -13,7 +13,10 @@ import (
 	"github.com/spk/spk-cockpit/internal/clock"
 	"github.com/spk/spk-cockpit/internal/eventbus"
 	cockpitlog "github.com/spk/spk-cockpit/internal/log"
+	"github.com/spk/spk-cockpit/internal/meeting"
+	"github.com/spk/spk-cockpit/internal/note"
 	"github.com/spk/spk-cockpit/internal/paths"
+	"github.com/spk/spk-cockpit/internal/secret"
 	"github.com/spk/spk-cockpit/internal/server"
 	"github.com/spk/spk-cockpit/internal/store"
 	"github.com/spk/spk-cockpit/internal/timer"
@@ -84,6 +87,29 @@ func runStart(ctx context.Context) error {
 	srv.Deps().Tags = tagRepo
 	srv.Deps().Bus = bus
 	srv.Deps().Timer = timerSvc
+
+	meetingRepo := store.NewMeetingRepo(st.DB)
+	noteRepo := store.NewNoteRepo(st.DB)
+	secretRepo := store.NewSecretRepo(st.DB)
+	syncStateRepo := store.NewSyncStateRepo(st.DB)
+
+	meetingSvc := meeting.NewService(meetingRepo, clock.Real(), bus)
+	noteSvc := note.NewService(noteRepo, clock.Real(), bus)
+
+	masterKey, err := secret.ResolveOrFallback(secret.NewKeyringResolver(), secret.NewEnvResolver(""))
+	if err != nil {
+		return fmt.Errorf("master key: %w", err)
+	}
+	secretSvc, err := secret.NewService(secretRepo, clock.Real(), masterKey)
+	if err != nil {
+		return fmt.Errorf("secret service: %w", err)
+	}
+
+	srv.Deps().Meetings = meetingSvc
+	srv.Deps().Notes = noteSvc
+	srv.Deps().Secrets = secretSvc
+	srv.Deps().Kv = store.NewKvRepo(st.DB)
+	_ = syncStateRepo // wired in Plan Task 12 (CalDAV syncer)
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

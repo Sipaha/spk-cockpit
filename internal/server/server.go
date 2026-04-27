@@ -12,7 +12,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/eventbus"
+	"github.com/spk/spk-cockpit/internal/meeting"
+	"github.com/spk/spk-cockpit/internal/note"
+	"github.com/spk/spk-cockpit/internal/secret"
 	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 )
@@ -27,10 +31,21 @@ type Config struct {
 
 // Deps wires domain services to HTTP handlers. Fields are filled by callers between New() and Serve().
 type Deps struct {
-	Todos *todo.Service
-	Tags  todo.TagRepo
-	Bus   *eventbus.Bus
-	Timer *timer.Service
+	Todos    *todo.Service
+	Tags     todo.TagRepo
+	Bus      *eventbus.Bus
+	Timer    *timer.Service
+	Meetings *meeting.Service
+	Notes    *note.Service
+	Secrets  *secret.Service
+	Sync     SyncTrigger
+	Kv       todo.KvRepo
+}
+
+// SyncTrigger lets the server force a CalDAV sync from a CLI/UI request.
+type SyncTrigger interface {
+	TriggerNow(source string) error
+	Status() []api.SyncStateEntry
 }
 
 // Server owns the UDS listener and HTTP server.

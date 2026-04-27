@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"io"
 	"net"
@@ -17,7 +18,14 @@ import (
 	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/clock"
 	"github.com/spk/spk-cockpit/internal/eventbus"
+	"github.com/spk/spk-cockpit/internal/meeting"
+	meetingfake "github.com/spk/spk-cockpit/internal/meeting/fakerepo"
+	"github.com/spk/spk-cockpit/internal/note"
+	notefake "github.com/spk/spk-cockpit/internal/note/fakerepo"
+	"github.com/spk/spk-cockpit/internal/secret"
+	secretfake "github.com/spk/spk-cockpit/internal/secret/fakerepo"
 	"github.com/spk/spk-cockpit/internal/server"
+	"github.com/spk/spk-cockpit/internal/store"
 	"github.com/spk/spk-cockpit/internal/timer"
 	timerfake "github.com/spk/spk-cockpit/internal/timer/fakerepo"
 	"github.com/spk/spk-cockpit/internal/todo"
@@ -69,6 +77,24 @@ func newTestServer(t *testing.T) (string, func()) {
 	srv.Deps().Bus = bus
 	timerRepo := timerfake.NewTimer()
 	srv.Deps().Timer = timer.NewService(timerRepo, clock.NewFake(time.Unix(1700000000, 0)), bus)
+
+	srv.Deps().Meetings = meeting.NewService(meetingfake.NewMeeting(), clock.NewFake(time.Unix(1700000000, 0)), bus)
+	srv.Deps().Notes = note.NewService(notefake.NewNote(), clock.NewFake(time.Unix(1700000000, 0)), bus)
+
+	masterKey := make([]byte, 32)
+	_, _ = rand.Read(masterKey)
+	secSvc, err := secret.NewService(secretfake.NewSecret(), clock.NewFake(time.Unix(1700000000, 0)), masterKey)
+	require.NoError(t, err)
+	srv.Deps().Secrets = secSvc
+
+	// In tests, Kv uses a SQLite-backed kv table from a fresh DB.
+	dsn := "file:" + t.TempDir() + "/test-kv.db"
+	st, err := store.Open(dsn)
+	require.NoError(t, err)
+	require.NoError(t, store.Migrate(st.DB))
+	t.Cleanup(func() { _ = st.Close() })
+	srv.Deps().Kv = store.NewKvRepo(st.DB)
+
 	go func() { _ = srv.Serve() }()
 	waitForSocket(t, sock)
 	return sock, func() { _ = srv.Stop(context.Background()); bus.Close() }
@@ -145,6 +171,52 @@ func TestServer_SSEReceivesPublishedEvents(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no SSE event received")
 	}
+}
+
+func TestServer_MeetingCreateGetList(t *testing.T) {
+	sock, stop := newTestServer(t)
+	defer stop()
+	c := udsClient(sock)
+
+	body, _ := json.Marshal(api.CreateMeetingRequest{
+		Title: "Standup", StartAt: 2000, EndAt: 2500,
+	})
+	resp, err := c.Post("http://unix/api/meetings", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, 201, resp.StatusCode)
+
+	resp2, err := c.Get("http://unix/api/meetings")
+	require.NoError(t, err)
+	defer func() { _ = resp2.Body.Close() }()
+	require.Equal(t, 200, resp2.StatusCode)
+	var list []api.Meeting
+	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&list))
+	require.Len(t, list, 1)
+	require.Equal(t, "Standup", list[0].Title)
+}
+
+func TestServer_NoteUpsertAndFindByMeeting(t *testing.T) {
+	sock, stop := newTestServer(t)
+	defer stop()
+	c := udsClient(sock)
+
+	body, _ := json.Marshal(api.UpsertNoteRequest{MeetingID: "m-1", Body: "v1"})
+	req, _ := http.NewRequest("PUT", "http://unix/api/notes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, 200, resp.StatusCode)
+
+	resp2, err := c.Get("http://unix/api/meetings/m-1/note")
+	require.NoError(t, err)
+	defer func() { _ = resp2.Body.Close() }()
+	require.Equal(t, 200, resp2.StatusCode)
+	var got *api.Note
+	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&got))
+	require.NotNil(t, got)
+	require.Equal(t, "v1", got.Body)
 }
 
 func TestServer_TimerStartActiveStop(t *testing.T) {
