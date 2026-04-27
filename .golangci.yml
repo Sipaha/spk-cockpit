@@ -12,6 +12,12 @@ linters:
     - staticcheck
     - unparam
     - unused
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - "disableStutteringCheck"
 formatters:
   enable:
     - gofmt
