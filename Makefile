@@ -8,7 +8,7 @@ build: web-build build-fast
 
 build-fast:
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build -trimpath -tags webkit2_41 -o $(BIN) ./cmd/cockpit
+	$(GO) build -trimpath -tags "webkit2_41 production" -o $(BIN) ./cmd/cockpit
 
 web-build:
 	cd web && pnpm install --frozen-lockfile && pnpm build
