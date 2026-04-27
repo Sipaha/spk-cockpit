@@ -107,3 +107,88 @@ type TodoTimeTotal struct {
 type StartTimerRequest struct {
 	TodoID string `json:"todoId"`
 }
+
+// MeetingSource indicates where a meeting came from.
+type MeetingSource string
+
+// Meeting sources.
+const (
+	MeetingSourceManual MeetingSource = "manual"
+	MeetingSourceCalDAV MeetingSource = "caldav"
+)
+
+// Meeting is the canonical meeting DTO.
+type Meeting struct {
+	ID           string        `json:"id"`
+	Source       MeetingSource `json:"source"`
+	ExternalUID  string        `json:"externalUid,omitempty"`
+	ExternalETag string        `json:"externalEtag,omitempty"`
+	Title        string        `json:"title"`
+	Description  string        `json:"description"`
+	Location     string        `json:"location"`
+	StartAt      int64         `json:"startAt"`
+	EndAt        int64         `json:"endAt"`
+	NotifyMin    *int          `json:"notifyMin,omitempty"`
+	NotifiedAt   *int64        `json:"notifiedAt,omitempty"`
+	Cancelled    bool          `json:"cancelled"`
+	CreatedAt    int64         `json:"createdAt"`
+	UpdatedAt    int64         `json:"updatedAt"`
+}
+
+// CreateMeetingRequest is the body of POST /api/meetings (manual only).
+type CreateMeetingRequest struct {
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Location    string `json:"location,omitempty"`
+	StartAt     int64  `json:"startAt"`
+	EndAt       int64  `json:"endAt"`
+	NotifyMin   *int   `json:"notifyMin,omitempty"`
+}
+
+// UpdateMeetingRequest is the body of PATCH /api/meetings/{id}.
+// Only manual meetings may be updated; nil pointers leave fields unchanged.
+type UpdateMeetingRequest struct {
+	Title       *string `json:"title,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Location    *string `json:"location,omitempty"`
+	StartAt     *int64  `json:"startAt,omitempty"`
+	EndAt       *int64  `json:"endAt,omitempty"`
+	NotifyMin   *int    `json:"notifyMin,omitempty"`
+}
+
+// Note is a markdown note attached to a meeting OR a todo.
+type Note struct {
+	ID        string `json:"id"`
+	MeetingID string `json:"meetingId,omitempty"`
+	TodoID    string `json:"todoId,omitempty"`
+	Body      string `json:"body"`
+	CreatedAt int64  `json:"createdAt"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+// UpsertNoteRequest is the body of PUT /api/notes (creates or updates by attachment).
+// Exactly one of MeetingID / TodoID must be non-empty.
+type UpsertNoteRequest struct {
+	MeetingID string `json:"meetingId,omitempty"`
+	TodoID    string `json:"todoId,omitempty"`
+	Body      string `json:"body"`
+}
+
+// Secret describes an encrypted secret without exposing its value.
+type Secret struct {
+	Name      string `json:"name"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+// SetSecretRequest is the body of PUT /api/secrets/{name}.
+type SetSecretRequest struct {
+	Value string `json:"value"`
+}
+
+// SyncStateEntry reports per-source sync status.
+type SyncStateEntry struct {
+	Source   string `json:"source"`
+	Cursor   string `json:"cursor"`
+	LastOkAt *int64 `json:"lastOkAt,omitempty"`
+	LastErr  string `json:"lastErr,omitempty"`
+}

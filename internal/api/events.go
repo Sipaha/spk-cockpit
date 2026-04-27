@@ -2,12 +2,17 @@ package api
 
 // Event type names used over SSE / event bus.
 const (
-	EventTodoCreated       = "todo.created"
-	EventTodoUpdated       = "todo.updated"
-	EventTodoStatusChanged = "todo.status_changed"
-	EventTodoDeleted       = "todo.deleted"
-	EventTimerStarted      = "timer.started"
-	EventTimerStopped      = "timer.stopped"
+	EventTodoCreated              = "todo.created"
+	EventTodoUpdated              = "todo.updated"
+	EventTodoStatusChanged        = "todo.status_changed"
+	EventTodoDeleted              = "todo.deleted"
+	EventTimerStarted             = "timer.started"
+	EventTimerStopped             = "timer.stopped"
+	EventMeetingUpserted          = "meeting.upserted"
+	EventMeetingDeleted           = "meeting.deleted"
+	EventMeetingNotificationFired = "meeting.notification_fired"
+	EventNoteUpserted             = "note.upserted"
+	EventSyncStateChanged         = "sync.state_changed"
 )
 
 // Event is the envelope sent over SSE and the in-process bus.
@@ -52,4 +57,34 @@ type TimerStoppedData struct {
 	SessionID   int64  `json:"sessionId"`
 	EndedAt     int64  `json:"endedAt"`
 	DurationSec int64  `json:"durationSec"`
+}
+
+// MeetingUpsertedData is the payload of EventMeetingUpserted.
+type MeetingUpsertedData struct {
+	Meeting Meeting `json:"meeting"`
+}
+
+// MeetingDeletedData is the payload of EventMeetingDeleted.
+type MeetingDeletedData struct {
+	MeetingID string `json:"meetingId"`
+}
+
+// MeetingNotificationFiredData is the payload of EventMeetingNotificationFired.
+type MeetingNotificationFiredData struct {
+	MeetingID string `json:"meetingId"`
+	FiredAt   int64  `json:"firedAt"`
+}
+
+// NoteUpsertedData is the payload of EventNoteUpserted.
+type NoteUpsertedData struct {
+	NoteID    string `json:"noteId"`
+	MeetingID string `json:"meetingId,omitempty"`
+	TodoID    string `json:"todoId,omitempty"`
+}
+
+// SyncStateChangedData is the payload of EventSyncStateChanged.
+type SyncStateChangedData struct {
+	Source  string `json:"source"`
+	Status  string `json:"status"`
+	LastErr string `json:"lastErr,omitempty"`
 }
