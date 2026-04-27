@@ -48,6 +48,8 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("POST /api/sync/{source}", handleSyncTrigger(d))
 	mux.HandleFunc("GET /api/sync", handleSyncStatus(d))
 
+	mux.HandleFunc("GET /api/standup", handleStandup(d))
+
 	mux.HandleFunc("GET /api/kv/{key}", handleGetKv(d))
 	mux.HandleFunc("PUT /api/kv/{key}", handleSetKv(d))
 

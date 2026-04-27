@@ -17,6 +17,7 @@ import (
 	"github.com/spk/spk-cockpit/internal/meeting"
 	"github.com/spk/spk-cockpit/internal/note"
 	"github.com/spk/spk-cockpit/internal/secret"
+	"github.com/spk/spk-cockpit/internal/standup"
 	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 )
@@ -40,6 +41,7 @@ type Deps struct {
 	Secrets  *secret.Service
 	Sync     SyncTrigger
 	Kv       todo.KvRepo
+	Standup  *standup.Service
 }
 
 // SyncTrigger lets the server force a CalDAV sync from a CLI/UI request.
