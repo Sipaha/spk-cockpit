@@ -15,7 +15,7 @@ import (
 // SourceName is the sync_state key for CalDAV.
 const SourceName = "caldav"
 
-// Syncer is a periodic CalDAV worker that upserts meetings from Yandex.
+// Syncer is a periodic CalDAV worker that upserts meetings from any RFC 4791-compliant server.
 type Syncer struct {
 	client    Client
 	meetings  *meeting.Service

@@ -1,5 +1,7 @@
-// Package caldav provides a CalDAV client tailored for spk-cockpit's read-only
-// sync use case (Yandex Calendar).
+// Package caldav provides a CalDAV client for spk-cockpit's read-only meeting
+// sync. Works with any RFC 4791-compliant server (Yandex, Fastmail, iCloud,
+// Nextcloud, Posteo, mailbox.org, …); the user supplies the collection URL and
+// credentials in Settings.
 package caldav
 
 import (

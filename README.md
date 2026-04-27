@@ -8,7 +8,7 @@ Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 
 - **Todos** with priority, tags, due dates, and a full audit history. Quick-add inline syntax: `Fix login !urgent #backend due:tomorrow`.
 - **Time tracking** — start/stop a timer on any todo. Only one runs at a time; daily totals are aggregated automatically.
-- **Calendar** — read-only sync from Yandex Calendar via CalDAV. DBus desktop notifications fire N minutes before each meeting (default 5; per-meeting override).
+- **Calendar** — read-only sync from any CalDAV server (Yandex, Fastmail, iCloud, Nextcloud, Posteo, mailbox.org, …). DBus desktop notifications fire N minutes before each meeting (default 5; per-meeting override) and a separate small popup window opens 1 minute before.
 - **Markdown notes** attached to meetings or todos, with revision history.
 - **Daily standup helper** — auto-aggregates "Yesterday / Today / Blockers" from completed todos, your GitLab commits, and your Citeck Project Tracker activity. One-click copy as markdown.
 - **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open standup, stop timer, refresh sync).
@@ -59,7 +59,7 @@ cockpit timer stop
 # calendar / secrets
 cockpit meeting list -d 14
 cockpit meeting next
-echo "my-app-password" | cockpit secret set yandex_caldav
+echo "my-app-password" | cockpit secret set caldav_password
 
 # standup
 cockpit standup                       # markdown for today

@@ -6,7 +6,7 @@ import { SyncStatusBadge } from "../components/SyncStatusBadge";
 export function Settings() {
   const { syncStates, loadSyncStatus } = useTodoStore();
 
-  const [caldavUrl, setCaldavUrl] = useState("https://caldav.yandex.ru/");
+  const [caldavUrl, setCaldavUrl] = useState("");
   const [caldavUser, setCaldavUser] = useState("");
   const [caldavPass, setCaldavPass] = useState("");
   const [defaultNotifyMin, setDefaultNotifyMin] = useState("5");
@@ -27,7 +27,7 @@ export function Settings() {
       await api.setKv("caldav.url", caldavUrl);
       await api.setKv("caldav.username", caldavUser);
       if (caldavPass) {
-        await api.setSecret("yandex_caldav", caldavPass);
+        await api.setSecret("caldav_password", caldavPass);
         setCaldavPass("");
       }
       setSavedAt(new Date().toLocaleTimeString());
@@ -58,13 +58,20 @@ export function Settings() {
       <h2 className="text-xl font-semibold">Settings</h2>
 
       <section className="flex flex-col gap-3">
-        <h3 className="text-fgmute uppercase text-xs">Yandex CalDAV</h3>
+        <h3 className="text-fgmute uppercase text-xs">CalDAV</h3>
+        <p className="text-fgmute text-xs">
+          Works with any CalDAV server (Yandex, Fastmail, iCloud, Nextcloud, Posteo, …). Yandex
+          users: generate an app-password at id.yandex.ru → Security → App passwords; the
+          collection URL looks like{" "}
+          <code className="text-fg">https://caldav.yandex.ru/calendars/&lt;you&gt;/events-default/</code>.
+        </p>
         <label className="flex flex-col gap-1">
           <span className="text-sm">URL</span>
           <input
             type="text"
             value={caldavUrl}
             onChange={(e) => setCaldavUrl(e.target.value)}
+            placeholder="https://caldav.example.com/calendars/you/"
             className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg"
           />
         </label>
