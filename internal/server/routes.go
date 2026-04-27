@@ -13,4 +13,6 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("GET /api/todos/{id}/history", handleHistoryTodo(d))
 
 	mux.HandleFunc("GET /api/tags", handleListTags(d))
+
+	mux.HandleFunc("GET /api/events", handleEvents(d))
 }

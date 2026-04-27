@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,4 +97,48 @@ func udsClient(sock string) *http.Client {
 			return net.Dial("unix", sock)
 		},
 	}}
+}
+
+func TestServer_SSEReceivesPublishedEvents(t *testing.T) {
+	sock, stop := newTestServer(t)
+	defer stop()
+
+	c := udsClient(sock)
+	req, _ := http.NewRequest("GET", "http://unix/api/events", nil)
+	resp, err := c.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, 200, resp.StatusCode)
+
+	body, _ := json.Marshal(api.CreateTodoRequest{Title: "evt-test", Priority: api.PriorityNormal})
+	postResp, err := c.Post("http://unix/api/todos", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	_ = postResp.Body.Close()
+
+	done := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		got := ""
+		for {
+			n, err := resp.Body.Read(buf)
+			if n > 0 {
+				got += string(buf[:n])
+				if strings.Contains(got, "todo.created") {
+					done <- got
+					return
+				}
+			}
+			if err != nil {
+				done <- got
+				return
+			}
+		}
+	}()
+
+	select {
+	case got := <-done:
+		require.Contains(t, got, "todo.created")
+	case <-time.After(2 * time.Second):
+		t.Fatal("no SSE event received")
+	}
 }

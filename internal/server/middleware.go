@@ -38,3 +38,9 @@ func (sw *statusWriter) WriteHeader(c int) {
 	sw.status = c
 	sw.ResponseWriter.WriteHeader(c)
 }
+
+func (sw *statusWriter) Flush() {
+	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
