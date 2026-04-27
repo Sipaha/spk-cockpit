@@ -30,7 +30,29 @@ Personal productivity tray app — todo list with prioritization, filtering, his
 - CLI: `cockpit meeting next | list`, `cockpit secret set | list`
 - Tray tooltip surfaces next meeting (within 24h)
 
-Phase 4 (standup helper, GitLab/Tracker integrations, autostart, GitHub Actions release) is planned separately.
+### Phase 4 ✅
+- Standup helper aggregates "Yesterday / Today / Blockers" from closed todos, GitLab commits, and Citeck Project Tracker activity.
+- Web `/standup` page with "Copy as markdown" button.
+- CLI: `cockpit standup [--date YYYY-MM-DD]` prints the same markdown to stdout.
+- Read-only GitLab integration: configure `gitlab.url` + `gitlab.author_username` via KV, store `gitlab_token` as a secret.
+- Read-only Citeck PT integration: configure `tracker.url` + `tracker.username`, store `tracker_token` as a secret.
+- `cockpit install --autostart` installs `~/.config/systemd/user/spk-cockpit.service` and enables it (`--uninstall` to remove).
+- GitHub Actions release workflow on `v*.*.*` tags builds and publishes a `linux/amd64` binary.
+
+#### Configuring GitLab and Tracker
+
+```bash
+# GitLab
+cockpit secret set gitlab_token < /dev/stdin     # paste a personal access token
+curl --unix-socket ~/.local/state/spk-cockpit/cockpit.sock \
+     -X PUT -H 'Content-Type: application/json' \
+     -d '{"value": "https://gitlab.example.com"}' http://unix/api/kv/gitlab.url
+curl --unix-socket ~/.local/state/spk-cockpit/cockpit.sock \
+     -X PUT -H 'Content-Type: application/json' \
+     -d '{"value": "alice"}' http://unix/api/kv/gitlab.author_username
+
+# Citeck PT — same pattern with tracker.url, tracker.username, tracker_token.
+```
 
 ## Build
 
@@ -64,6 +86,9 @@ cockpit meeting list -d 14                # next 14 days
 cockpit meeting next                      # closest upcoming
 cockpit secret set yandex_caldav          # reads value from stdin
 echo "my-app-password" | cockpit secret set yandex_caldav
+cockpit standup                           # markdown for today
+cockpit standup --date 2026-04-26         # markdown for a specific day
+cockpit install --autostart               # systemd-user unit; --uninstall to remove
 ```
 
 ## Filesystem
