@@ -21,6 +21,7 @@ import (
 	"github.com/spk/spk-cockpit/internal/note"
 	"github.com/spk/spk-cockpit/internal/notify"
 	"github.com/spk/spk-cockpit/internal/paths"
+	"github.com/spk/spk-cockpit/internal/popup"
 	"github.com/spk/spk-cockpit/internal/secret"
 	"github.com/spk/spk-cockpit/internal/server"
 	"github.com/spk/spk-cockpit/internal/standup"
@@ -184,18 +185,21 @@ func runStart(ctx context.Context) error {
 		}
 	}
 
-	// winApp is bound by window.Run below; the popup callback references it via
-	// closure so it picks up the live handle once the window is up.
-	var winApp *window.App
+	exePath, err := os.Executable()
+	if err != nil {
+		logger.Warn("os.Executable failed; meeting popup disabled", "err", err)
+		exePath = ""
+	}
+	popupBackend := popup.NewSubprocess(exePath, p.SocketFile, logger)
+	if !popupBackend.Available() {
+		logger.Warn("meeting popup disabled (no executable path)")
+	}
+
 	scheduler := notify.NewScheduler(notify.SchedulerConfig{
 		Meetings: meetingSvc,
 		Notifier: notifier,
 		Popup: func(m api.Meeting) {
-			if winApp == nil {
-				logger.Info("meeting popup ready but window not up yet", "id", m.ID, "title", m.Title)
-				return
-			}
-			winApp.ShowAt("/calendar?focus=" + m.ID)
+			popupBackend.Show(m)
 		},
 		Clock:            clock.Real(),
 		Logger:           logger,
@@ -203,6 +207,10 @@ func runStart(ctx context.Context) error {
 		DefaultPopupMin:  defaultPopupMin,
 	})
 	go scheduler.Run(ctx)
+
+	// winApp is bound by window.Run below; tray click handlers reference it via
+	// closure so they pick up the live handle once the window is up.
+	var winApp *window.App
 
 	serveErr := make(chan error, 1)
 	go func() {

@@ -50,6 +50,31 @@ func (a *App) ShowAt(path string) {
 	wruntime.WindowExecJS(a.ctx, js)
 }
 
+// RunPopup starts a small standalone Wails window that opens directly on the
+// meeting popup route. It blocks until the user closes the window, then returns
+// (the calling process exits naturally — popup is one-shot).
+//
+// Used by `cockpit popup --meeting-id=<id>` subprocess to render an OS-native
+// pre-meeting popup that is independent from the main spk-cockpit window.
+func RunPopup(assets embed.FS, socketPath, meetingID string) error {
+	js := "(function(){var u='/popup-meeting?id=" + meetingID + "';if(location.pathname+location.search!==u){history.replaceState(null,'',u);window.dispatchEvent(new PopStateEvent('popstate'));}})();"
+	return wails.Run(&options.App{
+		Title:  "Meeting",
+		Width:  520,
+		Height: 360,
+		AssetServer: &assetserver.Options{
+			Assets:     assets,
+			Middleware: udsMiddleware(socketPath),
+		},
+		HideWindowOnClose: false,
+		AlwaysOnTop:       true,
+		Linux:             &linux.Options{ProgramName: "spk-cockpit-popup"},
+		OnDomReady: func(ctx context.Context) {
+			wruntime.WindowExecJS(ctx, js)
+		},
+	})
+}
+
 // Run starts the Wails event loop. It blocks until the window is closed.
 // ready is invoked once the App is constructed (before the loop spins up) so callers
 // can capture a handle for tray actions.

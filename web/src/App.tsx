@@ -4,12 +4,14 @@ import { Popover } from "./pages/Popover";
 import { Calendar } from "./pages/Calendar";
 import { Settings } from "./pages/Settings";
 import { Standup } from "./pages/Standup";
+import { MeetingPopup } from "./pages/MeetingPopup";
 
 export function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/popover" element={<Popover />} />
+        <Route path="/popup-meeting" element={<MeetingPopup />} />
         <Route path="*" element={<MainShell />} />
       </Routes>
     </BrowserRouter>
