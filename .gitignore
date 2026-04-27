@@ -1,0 +1,26 @@
+# Binaries
+build/
+*.exe
+*.out
+
+# Go
+*.test
+coverage.out
+coverage.html
+
+# Web
+node_modules/
+web/dist/
+web/test-results/
+.vite/
+
+# Editors
+.idea/
+.vscode/
+.DS_Store
+
+# Local state
+*.db
+*.db.bak.*
+*.sock
+*.log
