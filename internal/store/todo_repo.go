@@ -1,0 +1,184 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/spk/spk-cockpit/internal/api"
+	"github.com/spk/spk-cockpit/internal/todo"
+)
+
+// TodoRepo is the SQLite-backed implementation of todo.TodoRepo.
+//
+//nolint:revive // TodoRepo intentionally includes package qualifier for cross-package readability
+type TodoRepo struct {
+	db *sql.DB
+}
+
+// NewTodoRepo constructs a TodoRepo over db.
+func NewTodoRepo(db *sql.DB) *TodoRepo { return &TodoRepo{db: db} }
+
+// Create inserts a todo. Caller is responsible for ID and timestamps.
+func (r *TodoRepo) Create(ctx context.Context, t api.Todo) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO todos(id, title, notes, priority, status, due_at, created_at, updated_at, done_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, t.ID, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.CreatedAt, t.UpdatedAt, t.DoneAt)
+	if err != nil {
+		return fmt.Errorf("insert todo: %w", err)
+	}
+	return nil
+}
+
+// Get returns a non-deleted todo by id, or todo.ErrNotFound.
+func (r *TodoRepo) Get(ctx context.Context, id string) (api.Todo, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at
+		FROM todos WHERE id = ? AND deleted_at IS NULL
+	`, id)
+	t, err := scanTodo(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	return t, err
+}
+
+// Update loads, mutates and saves a todo atomically.
+func (r *TodoRepo) Update(ctx context.Context, id string, mutate func(*api.Todo) error) (api.Todo, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at
+		FROM todos WHERE id = ? AND deleted_at IS NULL
+	`, id)
+	t, err := scanTodo(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	if err != nil {
+		return api.Todo{}, err
+	}
+
+	if err := mutate(&t); err != nil {
+		return api.Todo{}, err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE todos SET title=?, notes=?, priority=?, status=?, due_at=?, updated_at=?, done_at=?
+		WHERE id=?
+	`, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.UpdatedAt, t.DoneAt, t.ID)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("update todo: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return api.Todo{}, fmt.Errorf("commit tx: %w", err)
+	}
+	return t, nil
+}
+
+// Delete soft-deletes a todo by setting deleted_at.
+func (r *TodoRepo) Delete(ctx context.Context, id string) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE todos SET deleted_at=strftime('%s','now') WHERE id=? AND deleted_at IS NULL`, id)
+	if err != nil {
+		return fmt.Errorf("delete todo: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return todo.ErrNotFound
+	}
+	return nil
+}
+
+// List returns todos matching the filter, sorted by status (open first), then priority desc, then due_at asc, then created_at desc.
+func (r *TodoRepo) List(ctx context.Context, f todo.TodoFilter) ([]api.Todo, error) {
+	var (
+		conds []string
+		args  []any
+	)
+	conds = append(conds, "deleted_at IS NULL")
+	if !f.IncludeDone {
+		conds = append(conds, "status NOT IN ('done', 'cancelled')")
+	}
+	if len(f.Statuses) > 0 {
+		ph := strings.Repeat("?,", len(f.Statuses))
+		ph = ph[:len(ph)-1]
+		conds = append(conds, "status IN ("+ph+")")
+		for _, s := range f.Statuses {
+			args = append(args, string(s))
+		}
+	}
+	if len(f.Priorities) > 0 {
+		ph := strings.Repeat("?,", len(f.Priorities))
+		ph = ph[:len(ph)-1]
+		conds = append(conds, "priority IN ("+ph+")")
+		for _, p := range f.Priorities {
+			args = append(args, int(p))
+		}
+	}
+	if f.Search != "" {
+		conds = append(conds, "(title LIKE ? OR notes LIKE ?)")
+		s := "%" + f.Search + "%"
+		args = append(args, s, s)
+	}
+	if len(f.Tags) > 0 {
+		ph := strings.Repeat("?,", len(f.Tags))
+		ph = ph[:len(ph)-1]
+		conds = append(conds, "id IN (SELECT todo_id FROM todo_tags WHERE tag IN ("+ph+"))")
+		for _, t := range f.Tags {
+			args = append(args, t)
+		}
+	}
+	//nolint:gosec // all conds are built from safe sources, not user input
+	q := `SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at
+		FROM todos WHERE ` + strings.Join(conds, " AND ") +
+		` ORDER BY status='done' ASC, priority DESC, COALESCE(due_at, 9999999999) ASC, created_at DESC`
+	if f.Limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", f.Limit)
+	}
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list todos: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []api.Todo
+	for rows.Next() {
+		t, err := scanTodo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+type scanner interface {
+	Scan(...any) error
+}
+
+func scanTodo(s scanner) (api.Todo, error) {
+	var t api.Todo
+	var prio int
+	var status string
+	var dueAt, doneAt sql.NullInt64
+	if err := s.Scan(&t.ID, &t.Title, &t.Notes, &prio, &status, &dueAt, &t.CreatedAt, &t.UpdatedAt, &doneAt); err != nil {
+		return api.Todo{}, err
+	}
+	t.Priority = api.Priority(prio)
+	t.Status = api.TodoStatus(status)
+	if dueAt.Valid {
+		v := dueAt.Int64
+		t.DueAt = &v
+	}
+	if doneAt.Valid {
+		v := doneAt.Int64
+		t.DoneAt = &v
+	}
+	return t, nil
+}
