@@ -1,3 +1,4 @@
+// Package main is the entry point for spk-cockpit.
 package main
 
 import (
