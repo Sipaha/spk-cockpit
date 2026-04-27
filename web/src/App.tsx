@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
 import { Todos } from "./pages/Todos";
 import { Popover } from "./pages/Popover";
+import { Calendar } from "./pages/Calendar";
 
 export function App() {
   return (
@@ -15,21 +16,27 @@ export function App() {
 
 function MainShell() {
   const loc = useLocation();
+  const navItem = (to: string, label: string) => (
+    <Link to={to} className={loc.pathname === to ? "text-fg" : "text-fgmute"}>
+      {label}
+    </Link>
+  );
   return (
     <div className="min-h-screen flex">
       <aside className="w-48 bg-bgsub border-r border-bgmute p-4">
         <h1 className="text-lg font-semibold mb-4">spk-cockpit</h1>
-        <nav className="flex flex-col gap-1 text-fgmute">
-          <Link to="/" className={loc.pathname === "/" ? "text-fg" : ""}>
-            Todos
-          </Link>
-          <Link to="/popover" className="text-fgmute">
-            Compact view
-          </Link>
+        <nav className="flex flex-col gap-1">
+          {navItem("/", "Todos")}
+          {navItem("/calendar", "Calendar")}
+          {navItem("/popover", "Compact view")}
         </nav>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
-        <Todos />
+        <Routes>
+          <Route path="/" element={<Todos />} />
+          <Route path="/calendar" element={<Calendar />} />
+          <Route path="*" element={<Todos />} />
+        </Routes>
       </main>
     </div>
   );
