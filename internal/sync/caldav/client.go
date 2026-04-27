@@ -136,64 +136,13 @@ func (c *httpClient) discoverCalendarPaths(ctx context.Context) []string {
 	return out
 }
 
-// ParseICalEvents extracts api.Meeting values from an iCal object, restricted to [from, to].
+// ParseICalEvents extracts api.Meeting values from an iCal object, restricted
+// to [from, to]. Recurring series are expanded locally — see expandEvents for
+// the rationale (CalDAV servers commonly return the full series on a
+// time-range REPORT instead of pre-expanded occurrences).
 func ParseICalEvents(cal *ical.Calendar, from, to time.Time) []api.Meeting {
-	var out []api.Meeting
-	if cal == nil {
-		return nil
-	}
-	for _, comp := range cal.Children {
-		if comp.Name != ical.CompEvent {
-			slog.Debug("ParseICalEvents: skip non-VEVENT", "name", comp.Name)
-			continue
-		}
-		ev := ical.Event{Component: comp}
-		uid := propString(ev.Component, ical.PropUID)
-		summary := propString(ev.Component, ical.PropSummary)
-		hasRRULE := propString(ev.Component, ical.PropRecurrenceRule) != ""
-		recurID := propString(ev.Component, ical.PropRecurrenceID)
-		dtStartRaw := propString(ev.Component, ical.PropDateTimeStart)
-		dtEndRaw := propString(ev.Component, ical.PropDateTimeEnd)
-		duration := propString(ev.Component, ical.PropDuration)
-
-		if uid == "" {
-			slog.Debug("ParseICalEvents: skip — no UID", "summary", summary)
-			continue
-		}
-		desc := propString(ev.Component, ical.PropDescription)
-		loc := propString(ev.Component, ical.PropLocation)
-
-		start, err := ev.DateTimeStart(time.UTC)
-		if err != nil {
-			slog.Debug("ParseICalEvents: skip — DateTimeStart error", "uid", uid, "summary", summary, "dtstart_raw", dtStartRaw, "err", err)
-			continue
-		}
-		if start.IsZero() {
-			slog.Debug("ParseICalEvents: skip — DateTimeStart zero", "uid", uid, "summary", summary, "dtstart_raw", dtStartRaw)
-			continue
-		}
-		end, err := ev.DateTimeEnd(time.UTC)
-		if err != nil || end.IsZero() {
-			end = start.Add(time.Hour)
-		}
-		if !start.Before(to) || !end.After(from) {
-			slog.Debug("ParseICalEvents: skip — outside window",
-				"uid", uid, "summary", summary,
-				"start", start, "end", end, "window_from", from, "window_to", to,
-				"hasRRULE", hasRRULE, "recurrenceId", recurID,
-				"dtstart_raw", dtStartRaw, "dtend_raw", dtEndRaw, "duration_raw", duration)
-			continue
-		}
-		out = append(out, api.Meeting{
-			Source:      api.MeetingSourceCalDAV,
-			ExternalUID: uid,
-			Title:       summary,
-			Description: desc,
-			Location:    loc,
-			StartAt:     start.Unix(),
-			EndAt:       end.Unix(),
-		})
-	}
+	out := expandEvents(cal, from, to)
+	slog.Debug("ParseICalEvents: expanded", "count", len(out), "window_from", from, "window_to", to)
 	return out
 }
 
