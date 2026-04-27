@@ -17,6 +17,8 @@ import (
 	"github.com/spk/spk-cockpit/internal/server"
 	"github.com/spk/spk-cockpit/internal/store"
 	"github.com/spk/spk-cockpit/internal/todo"
+	"github.com/spk/spk-cockpit/internal/window"
+	webembed "github.com/spk/spk-cockpit/web/embed"
 )
 
 var startFlags struct {
@@ -80,15 +82,26 @@ func runStart(ctx context.Context) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	serveErr := make(chan error, 1)
+	go func() {
+		logger.Info("server listening", "socket", p.SocketFile)
+		serveErr <- srv.Serve()
+	}()
+
 	go func() { //nolint:gosec // context.Background is intentional: Stop needs its own deadline, not the cancelled request ctx
 		<-ctx.Done()
 		logger.Info("shutting down")
 		_ = srv.Stop(context.Background())
 	}()
 
-	logger.Info("server listening", "socket", p.SocketFile)
-	if err := srv.Serve(); err != nil {
+	// Wails owns the main thread.
+	winErr := window.Run(webembed.DistFS, p.SocketFile, nil)
+	logger.Info("window closed", "err", winErr)
+
+	cancel()
+	_ = srv.Stop(context.Background())
+	if err := <-serveErr; err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
-	return nil
+	return winErr
 }
