@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-do
 import { Todos } from "./pages/Todos";
 import { Popover } from "./pages/Popover";
 import { Calendar } from "./pages/Calendar";
+import { Settings } from "./pages/Settings";
 
 export function App() {
   return (
@@ -28,6 +29,7 @@ function MainShell() {
         <nav className="flex flex-col gap-1">
           {navItem("/", "Todos")}
           {navItem("/calendar", "Calendar")}
+          {navItem("/settings", "Settings")}
           {navItem("/popover", "Compact view")}
         </nav>
       </aside>
@@ -35,6 +37,7 @@ function MainShell() {
         <Routes>
           <Route path="/" element={<Todos />} />
           <Route path="/calendar" element={<Calendar />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Todos />} />
         </Routes>
       </main>
