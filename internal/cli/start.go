@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -16,6 +17,7 @@ import (
 	cockpitlog "github.com/spk/spk-cockpit/internal/log"
 	"github.com/spk/spk-cockpit/internal/meeting"
 	"github.com/spk/spk-cockpit/internal/note"
+	"github.com/spk/spk-cockpit/internal/notify"
 	"github.com/spk/spk-cockpit/internal/paths"
 	"github.com/spk/spk-cockpit/internal/secret"
 	"github.com/spk/spk-cockpit/internal/server"
@@ -136,6 +138,32 @@ func runStart(ctx context.Context) error {
 		go caldavSyncer.Run(ctx)
 		srv.Deps().Sync = caldavSyncer
 	}
+
+	var notifier notify.Notifier
+	dbusN, err := notify.NewDBus()
+	if err != nil {
+		logger.Warn("dbus init failed; using noop notifier", "err", err)
+		notifier = notify.NewNoop(logger)
+	} else {
+		notifier = dbusN
+	}
+	defer func() { _ = notifier.Close() }()
+
+	defaultNotifyMin := 5
+	if v, ok, _ := store.NewKvRepo(st.DB).Get(ctx, "meeting.default_notify_min"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			defaultNotifyMin = n
+		}
+	}
+
+	scheduler := notify.NewScheduler(notify.SchedulerConfig{
+		Meetings:         meetingSvc,
+		Notifier:         notifier,
+		Clock:            clock.Real(),
+		Logger:           logger,
+		DefaultNotifyMin: defaultNotifyMin,
+	})
+	go scheduler.Run(ctx)
 
 	serveErr := make(chan error, 1)
 	go func() {
