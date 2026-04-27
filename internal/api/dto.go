@@ -84,3 +84,26 @@ type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// TimerSession is one tracking interval on a todo. EndedAt nil = currently running.
+type TimerSession struct {
+	ID        int64  `json:"id"`
+	TodoID    string `json:"todoId"`
+	StartedAt int64  `json:"startedAt"`
+	EndedAt   *int64 `json:"endedAt,omitempty"`
+	Source    string `json:"source"`
+}
+
+// TodoTimeTotal returns aggregated tracked time for a todo since SinceUnix.
+type TodoTimeTotal struct {
+	TodoID     string `json:"todoId"`
+	SinceUnix  int64  `json:"sinceUnix"`
+	TotalSec   int64  `json:"totalSec"`
+	SessionCnt int    `json:"sessionCount"`
+	HasActive  bool   `json:"hasActive"`
+}
+
+// StartTimerRequest is the body of POST /api/timer/start.
+type StartTimerRequest struct {
+	TodoID string `json:"todoId"`
+}

@@ -6,6 +6,8 @@ const (
 	EventTodoUpdated       = "todo.updated"
 	EventTodoStatusChanged = "todo.status_changed"
 	EventTodoDeleted       = "todo.deleted"
+	EventTimerStarted      = "timer.started"
+	EventTimerStopped      = "timer.stopped"
 )
 
 // Event is the envelope sent over SSE and the in-process bus.
@@ -35,4 +37,19 @@ type TodoStatusChangedData struct {
 // TodoDeletedData is the payload of EventTodoDeleted.
 type TodoDeletedData struct {
 	TodoID string `json:"todoId"`
+}
+
+// TimerStartedData is the payload of EventTimerStarted.
+type TimerStartedData struct {
+	TodoID    string `json:"todoId"`
+	SessionID int64  `json:"sessionId"`
+	StartedAt int64  `json:"startedAt"`
+}
+
+// TimerStoppedData is the payload of EventTimerStopped.
+type TimerStoppedData struct {
+	TodoID      string `json:"todoId"`
+	SessionID   int64  `json:"sessionId"`
+	EndedAt     int64  `json:"endedAt"`
+	DurationSec int64  `json:"durationSec"`
 }
