@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -140,27 +141,44 @@ func runStart(ctx context.Context) error {
 	})
 	srv.Deps().Standup = standupSvc
 
-	caldavCfg := loadCaldavConfig(secretSvc, st.DB)
-	var caldavSyncer *caldav.Syncer
-	if caldavCfg != nil {
-		client, err := caldav.NewClient(*caldavCfg)
+	// CalDAV syncer is created lazily so that saving credentials in the running
+	// Settings UI takes effect without a daemon restart. The first call to
+	// /api/sync/caldav (or a successful poll) constructs the real syncer and
+	// starts its background Run goroutine. Subsequent calls reuse the same instance.
+	var (
+		caldavSyncer *caldav.Syncer
+		caldavMu     sync.Mutex
+	)
+	mintCaldav := func() *caldav.Syncer {
+		caldavMu.Lock()
+		defer caldavMu.Unlock()
+		if caldavSyncer != nil {
+			return caldavSyncer
+		}
+		cfg := loadCaldavConfig(secretSvc, st.DB)
+		if cfg == nil {
+			return nil
+		}
+		client, err := caldav.NewClient(*cfg)
 		if err != nil {
 			logger.Warn("caldav client init failed; sync disabled", "err", err)
-		} else {
-			caldavSyncer = caldav.NewSyncer(caldav.SyncerConfig{
-				Client:   client,
-				Meetings: meetingSvc,
-				State:    syncStateRepo,
-				Clock:    clock.Real(),
-				Logger:   logger,
-				Bus:      bus,
-			})
+			return nil
 		}
+		s := caldav.NewSyncer(caldav.SyncerConfig{
+			Client:   client,
+			Meetings: meetingSvc,
+			State:    syncStateRepo,
+			Clock:    clock.Real(),
+			Logger:   logger,
+			Bus:      bus,
+		})
+		go s.Run(ctx)
+		caldavSyncer = s
+		logger.Info("caldav syncer initialized")
+		return s
 	}
-	if caldavSyncer != nil {
-		go caldavSyncer.Run(ctx)
-		srv.Deps().Sync = caldavSyncer
-	}
+	mintCaldav() // try at startup; harmless if config is missing
+	srv.Deps().Sync = &lazySync{mint: mintCaldav}
 
 	var notifier notify.Notifier
 	dbusN, err := notify.NewDBus()
@@ -243,11 +261,7 @@ func runStart(ctx context.Context) error {
 			}
 		},
 		RefreshSync: func() {
-			if caldavSyncer == nil {
-				logger.Warn("tray: caldav syncer not configured")
-				return
-			}
-			if err := caldavSyncer.TriggerNow(caldav.SourceName); err != nil {
+			if err := srv.Deps().Sync.TriggerNow(caldav.SourceName); err != nil {
 				logger.Warn("tray: refresh sync failed", "err", err)
 			}
 		},
@@ -319,6 +333,33 @@ func buildGitLabSource(ctx context.Context, kv todo.KvRepo, secrets *secret.Serv
 	}
 	return src
 }
+
+// lazySync defers caldav syncer construction to first use, then memoizes the
+// instance. Saving credentials in Settings can therefore activate sync without
+// a daemon restart: the next /api/sync/caldav call mints the real syncer.
+type lazySync struct {
+	mint func() *caldav.Syncer
+}
+
+// TriggerNow forwards to the underlying syncer, minting it on demand.
+func (l *lazySync) TriggerNow(source string) error {
+	s := l.mint()
+	if s == nil {
+		return errSyncNotConfigured
+	}
+	return s.TriggerNow(source)
+}
+
+// Status returns the underlying syncer's status, or an empty list if not yet minted.
+func (l *lazySync) Status() []api.SyncStateEntry {
+	s := l.mint()
+	if s == nil {
+		return nil
+	}
+	return s.Status()
+}
+
+var errSyncNotConfigured = fmt.Errorf("sync not configured: missing caldav.url, caldav.username or caldav_password")
 
 // buildTrackerSource constructs a Citeck Tracker sync source from KV config and secrets.
 // Returns nil if any required value is missing or init fails.
