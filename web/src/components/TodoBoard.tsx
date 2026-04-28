@@ -11,6 +11,7 @@ import {
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import {
   SortableContext,
+  arrayMove,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -138,29 +139,41 @@ export function TodoBoard() {
     const moved = todos.find((t) => t.id === id);
     if (!moved) return;
 
-    const dest = view[toCol].filter((t) => t.id !== id);
-    let dropIndex = dest.length;
-    if (overId !== toCol) {
-      const i = dest.findIndex((t) => t.id === overId);
-      if (i >= 0) {
-        dropIndex = i;
-        // If the dragged card's center sits below the over-card's center,
-        // treat the drop as "after" instead of "before". Without this,
-        // releasing past the bottom of the last card snapped the card back
-        // because the over-id was still that last card and we always
-        // inserted before it.
-        const overRect = e.over?.rect;
-        const activeRect = e.active.rect.current.translated;
-        if (overRect && activeRect) {
-          const overCenter = overRect.top + overRect.height / 2;
-          const activeCenter = activeRect.top + activeRect.height / 2;
-          if (activeCenter > overCenter) dropIndex = i + 1;
-        }
+    const sameColumn = fromCol === toCol;
+    // Build the post-drop ordered list for the target column. For same-
+    // column reorders we use dnd-kit's arrayMove convention so the
+    // landing slot matches what the visual preview was showing — over.id
+    // is the card the active should swap with at the drop moment, and
+    // arrayMove handles the shift direction. For cross-column drops we
+    // splice the moved card into the target list at the over-card's
+    // position (or at the end when the drop hits the column body).
+    let postList: Todo[];
+    if (sameColumn) {
+      const list = view[fromCol];
+      const oldIndex = list.findIndex((t) => t.id === id);
+      const newIndex =
+        overId === toCol
+          ? list.length - 1
+          : list.findIndex((t) => t.id === overId);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+      postList = arrayMove(list, oldIndex, newIndex);
+    } else {
+      const target = view[toCol];
+      let insertAt: number;
+      if (overId === toCol) {
+        insertAt = target.length;
+      } else {
+        const i = target.findIndex((t) => t.id === overId);
+        insertAt = i >= 0 ? i : target.length;
       }
+      postList = [...target.slice(0, insertAt), moved, ...target.slice(insertAt)];
     }
 
-    const above = dest[dropIndex - 1];
-    const below = dest[dropIndex];
+    // Read the moved card's neighbors in the new list and average their
+    // sortOrders so the kanban order is stable without a global rewrite.
+    const idx = postList.findIndex((t) => t.id === id);
+    const above = postList[idx - 1];
+    const below = postList[idx + 1];
     let newSortOrder: number;
     if (above && below) {
       newSortOrder = (above.sortOrder + below.sortOrder) / 2;
@@ -172,11 +185,6 @@ export function TodoBoard() {
       newSortOrder = moved.sortOrder;
     }
 
-    const sameColumn = fromCol === toCol;
-    const sameSlot =
-      sameColumn && view[fromCol].findIndex((t) => t.id === id) === dropIndex;
-    if (sameSlot && newSortOrder === moved.sortOrder) return;
-
     const next: Buckets = {
       open: view.open.slice(),
       in_progress: view.in_progress.slice(),
@@ -184,9 +192,16 @@ export function TodoBoard() {
       cancelled: view.cancelled,
       backlog: view.backlog,
     };
-    next[fromCol] = next[fromCol].filter((t) => t.id !== id);
-    const updated: Todo = { ...moved, status: toCol, sortOrder: newSortOrder };
-    next[toCol].splice(dropIndex, 0, updated);
+    if (sameColumn) {
+      next[fromCol] = postList.map((t) =>
+        t.id === id ? { ...t, sortOrder: newSortOrder } : t,
+      );
+    } else {
+      next[fromCol] = next[fromCol].filter((t) => t.id !== id);
+      next[toCol] = postList.map((t) =>
+        t.id === id ? { ...t, status: toCol, sortOrder: newSortOrder } : t,
+      );
+    }
     setOverride(next);
 
     try {
