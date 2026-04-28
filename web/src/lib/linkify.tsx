@@ -1,4 +1,21 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
+
+// openExternal routes a URL to the system browser. In a Wails webview a plain
+// <a target="_blank"> won't navigate, so we call window.runtime.BrowserOpenURL
+// when the bridge is available; in dev (vite, plain browser) the regular href
+// follow-through still works.
+function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rt = (window as any).runtime;
+  if (rt && typeof rt.BrowserOpenURL === "function") {
+    e.preventDefault();
+    rt.BrowserOpenURL(url);
+  }
+}
+
+// Trailing chars that get glued to URLs by aggressive matching but virtually
+// never belong (sentence-ending punctuation, closing brackets/quotes).
+const TRAILING_TRIM = /[.,!?;:)\]}>"'»\\]+$/;
 
 // Linkify scans text for http(s) URLs and returns a React fragment list with
 // clickable <a> tags for each URL, preserving newlines as <br>. Anything not a
@@ -9,26 +26,31 @@ export function linkify(text: string): ReactNode[] {
   const out: ReactNode[] = [];
   const lines = text.split("\n");
   lines.forEach((line, lineIdx) => {
-    const matches = [...line.matchAll(/https?:\/\/[^\s<>"]+/g)];
+    const matches = [...line.matchAll(/https?:\/\/[^\s<>"\\]+/g)];
     let last = 0;
     for (const m of matches) {
       const idx = m.index ?? 0;
       if (idx > last) {
         out.push(line.slice(last, idx));
       }
-      const url = m[0];
+      let url = m[0];
+      const trail = url.match(TRAILING_TRIM);
+      const trailing = trail ? trail[0] : "";
+      if (trailing) url = url.slice(0, url.length - trailing.length);
       out.push(
         <a
           key={`${lineIdx}-${idx}`}
           href={url}
           target="_blank"
           rel="noreferrer"
+          onClick={(e) => openExternal(url, e)}
           className="text-accent hover:underline break-all"
         >
           {url}
         </a>,
       );
-      last = idx + url.length;
+      if (trailing) out.push(trailing);
+      last = idx + m[0].length;
     }
     if (last < line.length) {
       out.push(line.slice(last));

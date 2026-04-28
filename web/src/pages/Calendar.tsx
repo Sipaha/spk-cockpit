@@ -14,6 +14,13 @@ function startOfDay(d: Date): Date {
   return x;
 }
 
+// Sync window upper bound — anything past this isn't loaded into the store, so
+// "Show more" caps here.
+const SYNC_WINDOW_DAYS = 30;
+// Initial visible horizon for the Later section, in days from today.
+const INITIAL_LATER_DAYS = 5;
+const SHOW_MORE_STEP_DAYS = 7;
+
 export function Calendar() {
   const { meetings, meetingsLoading, loadMeetings } = useTodoStore();
   const [selected, setSelected] = useState<Meeting | null>(null);
@@ -26,6 +33,7 @@ export function Calendar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [laterDays, setLaterDays] = useState(INITIAL_LATER_DAYS);
 
   const reload = () => {
     const now = new Date();
@@ -61,16 +69,23 @@ export function Calendar() {
     void api.meetingNote(selected.id).then((n) => setNoteBody(n?.body ?? ""));
   }, [selected]);
 
-  const sections = useMemo(() => {
+  const { sections, hiddenLater } = useMemo(() => {
     const today = startOfDay(new Date()).getTime() / 1000;
     const tomorrow = today + 24 * 3600;
     const dayAfter = today + 2 * 24 * 3600;
-    return [
-      { label: "Today", items: meetings.filter((m) => m.startAt >= today && m.startAt < tomorrow) },
-      { label: "Tomorrow", items: meetings.filter((m) => m.startAt >= tomorrow && m.startAt < dayAfter) },
-      { label: "Later", items: meetings.filter((m) => m.startAt >= dayAfter) },
-    ];
-  }, [meetings]);
+    const laterCutoff = today + laterDays * 24 * 3600;
+    const allLater = meetings.filter((m) => m.startAt >= dayAfter);
+    return {
+      sections: [
+        { label: "Today", items: meetings.filter((m) => m.startAt >= today && m.startAt < tomorrow) },
+        { label: "Tomorrow", items: meetings.filter((m) => m.startAt >= tomorrow && m.startAt < dayAfter) },
+        { label: "Later", items: allLater.filter((m) => m.startAt < laterCutoff) },
+      ],
+      hiddenLater: allLater.filter((m) => m.startAt >= laterCutoff).length,
+    };
+  }, [meetings, laterDays]);
+
+  const canShowMore = laterDays < SYNC_WINDOW_DAYS && hiddenLater > 0;
 
   async function saveNote() {
     if (!selected) return;
@@ -96,7 +111,11 @@ export function Calendar() {
 
   return (
     <div className="flex gap-6 h-full">
-      <div className="flex-1 flex flex-col gap-4 max-w-2xl">
+      <div
+        className={`flex flex-col gap-4 min-w-0 ${
+          selected ? "w-96 shrink-0" : "flex-1"
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Calendar</h2>
           <div className="flex items-center gap-2">
@@ -170,13 +189,25 @@ export function Calendar() {
                   />
                 </div>
               ))}
+              {section.label === "Later" && canShowMore && (
+                <button
+                  onClick={() =>
+                    setLaterDays((d) =>
+                      Math.min(SYNC_WINDOW_DAYS, d + SHOW_MORE_STEP_DAYS),
+                    )
+                  }
+                  className="text-fgmute hover:text-fg text-sm py-2"
+                >
+                  Show more ({hiddenLater} hidden)
+                </button>
+              )}
             </section>
           ) : null,
         )}
       </div>
 
       {selected && (
-        <aside className="w-96 flex flex-col gap-3 border-l border-bgmute pl-4">
+        <aside className="flex-1 min-w-0 flex flex-col gap-3 border-l border-bgmute pl-4">
           <h3 className="font-semibold">{selected.title}</h3>
           {selected.description && (
             <p className="text-fgmute text-sm whitespace-pre-wrap">
@@ -193,7 +224,7 @@ export function Calendar() {
             value={noteBody}
             onChange={(e) => setNoteBody(e.target.value)}
             placeholder="Notes (markdown)"
-            className="flex-1 min-h-64 bg-bgsub border border-bgmute rounded p-3 text-fg font-mono text-sm focus:outline-none focus:border-accent"
+            className="w-full h-64 resize-y bg-bgsub border border-bgmute rounded p-3 text-fg font-mono text-sm focus:outline-none focus:border-accent"
           />
           <div className="flex gap-2">
             <button
