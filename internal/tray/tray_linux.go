@@ -21,10 +21,13 @@ type linuxTray struct {
 	overdueInfo *systray.MenuItem
 	syncInfo    *systray.MenuItem
 	stopTimer   *systray.MenuItem
-	refreshSync *systray.MenuItem
 	openStandup *systray.MenuItem
 	openWindow  *systray.MenuItem
 	quit        *systray.MenuItem
+	// nextMeetingID is the id of the meeting currently summarized by
+	// meetingInfo; the click handler reads it under t.mu so the deep-link is
+	// always consistent with the visible label.
+	nextMeetingID string
 
 	pending *State // last SetState before menu was built
 }
@@ -54,8 +57,10 @@ func (t *linuxTray) Run(onReady func(), onExit func()) {
 		t.mu.Lock()
 		t.timerInfo = systray.AddMenuItem("⏱  idle", "")
 		t.timerInfo.Disable()
+		// meetingInfo is intentionally enabled even when no meeting is set:
+		// fyne.io/systray suppresses click events on disabled items, and we
+		// want the entry to be clickable as soon as a meeting appears.
 		t.meetingInfo = systray.AddMenuItem("📅  no upcoming meeting", "")
-		t.meetingInfo.Disable()
 		t.overdueInfo = systray.AddMenuItem("✓  no overdue", "")
 		t.overdueInfo.Disable()
 		t.syncInfo = systray.AddMenuItem("✓  sync ok", "")
@@ -69,7 +74,6 @@ func (t *linuxTray) Run(onReady func(), onExit func()) {
 		systray.AddSeparator()
 		t.stopTimer = systray.AddMenuItem("Stop timer", "")
 		t.stopTimer.Disable()
-		t.refreshSync = systray.AddMenuItem("Refresh CalDAV", "")
 
 		systray.AddSeparator()
 		t.quit = systray.AddMenuItem("Quit", "")
@@ -115,6 +119,9 @@ func (t *linuxTray) applyState(s State) {
 		t.stopTimer.Disable()
 	}
 
+	t.mu.Lock()
+	t.nextMeetingID = s.NextMeetingID
+	t.mu.Unlock()
 	if s.NextMeeting != "" {
 		t.meetingInfo.SetTitle("📅  " + s.NextMeeting)
 	} else {
@@ -158,7 +165,7 @@ func (t *linuxTray) dispatchClicks() {
 		owCh := t.openWindow.ClickedCh
 		osCh := t.openStandup.ClickedCh
 		stCh := t.stopTimer.ClickedCh
-		rfCh := t.refreshSync.ClickedCh
+		mtCh := t.meetingInfo.ClickedCh
 		quitCh := t.quit.ClickedCh
 		t.mu.Unlock()
 
@@ -175,9 +182,16 @@ func (t *linuxTray) dispatchClicks() {
 			if t.actions.StopTimer != nil {
 				go t.actions.StopTimer()
 			}
-		case <-rfCh:
-			if t.actions.RefreshSync != nil {
-				go t.actions.RefreshSync()
+		case <-mtCh:
+			t.mu.Lock()
+			id := t.nextMeetingID
+			t.mu.Unlock()
+			if id != "" && t.actions.OpenMeeting != nil {
+				go t.actions.OpenMeeting(id)
+			} else if t.actions.OpenWindow != nil {
+				// Click on the placeholder "no upcoming meeting" entry: just
+				// surface the window so the user can poke around the calendar.
+				go t.actions.OpenWindow()
 			}
 		case <-quitCh:
 			if t.actions.Quit != nil {

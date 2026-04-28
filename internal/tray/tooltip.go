@@ -119,19 +119,23 @@ func (s *Subscriber) refreshMeeting() {
 	defer s.mu.Unlock()
 	if s.mtgFetch == nil {
 		s.state.NextMeeting = ""
+		s.state.NextMeetingID = ""
 		return
 	}
 	m := s.mtgFetch()
 	if m == nil {
 		s.state.NextMeeting = ""
+		s.state.NextMeetingID = ""
 		return
 	}
 	until := time.Until(time.Unix(m.StartAt, 0))
 	if until > 24*time.Hour || until < -10*time.Minute {
 		s.state.NextMeeting = ""
+		s.state.NextMeetingID = ""
 		return
 	}
 	s.state.NextMeeting = fmt.Sprintf("%s in %s", m.Title, until.Round(time.Minute))
+	s.state.NextMeetingID = m.ID
 }
 
 func (s *Subscriber) refreshOverdue(ctx context.Context) {

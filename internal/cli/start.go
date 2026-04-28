@@ -262,9 +262,9 @@ func runStart(ctx context.Context) error {
 				logger.Warn("tray: stop timer failed", "err", err)
 			}
 		},
-		RefreshSync: func() {
-			if err := srv.Deps().Sync.TriggerNow(caldav.SourceName); err != nil {
-				logger.Warn("tray: refresh sync failed", "err", err)
+		OpenMeeting: func(id string) {
+			if winApp != nil {
+				winApp.ShowAt("/calendar?focus=" + id)
 			}
 		},
 		Quit: func() {

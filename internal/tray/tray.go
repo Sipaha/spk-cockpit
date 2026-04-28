@@ -11,8 +11,9 @@ type Actions struct {
 	OpenStandup func()
 	// StopTimer stops the currently active timer session.
 	StopTimer func()
-	// RefreshSync triggers an immediate CalDAV sync.
-	RefreshSync func()
+	// OpenMeeting brings the window forward focused on a specific meeting
+	// (deep-link to /calendar?focus=<id>). Used by the next-meeting tray entry.
+	OpenMeeting func(id string)
 	// Quit terminates the daemon.
 	Quit func()
 }
@@ -26,6 +27,9 @@ type State struct {
 	TimerLabel string
 	// NextMeeting is the next meeting summary if any, e.g. "Daily standup in 17m".
 	NextMeeting string
+	// NextMeetingID is the id of the meeting summarized in NextMeeting; empty
+	// when no upcoming meeting is shown. Used to deep-link the menu entry.
+	NextMeetingID string
 	// Overdue is the number of urgent/high open todos with due_at in the past.
 	Overdue int
 	// SyncError is non-empty when the most recent CalDAV sync failed.
