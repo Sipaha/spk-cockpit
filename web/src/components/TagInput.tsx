@@ -118,7 +118,7 @@ export function TagInput({ value, onChange, suggestions, placeholder }: TagInput
                 i === safeHighlight ? "bg-bgmute" : ""
               }`}
             >
-              <span>#{name}</span>
+              <span>{name}</span>
             </li>
           ))}
         </ul>

@@ -62,7 +62,7 @@ export function TodoRow({
         {priorityGlyph[todo.priority]}
       </span>
       <div
-        className="flex-1 min-w-0 cursor-pointer flex flex-col gap-0.5"
+        className="flex-1 min-w-0 cursor-pointer flex flex-col gap-1"
         onClick={(e) => {
           e.stopPropagation();
           onView(todo);
@@ -77,13 +77,15 @@ export function TodoRow({
             {renderSmart(notesLine, taskPatterns)}
           </div>
         )}
+        {todo.tags && todo.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {todo.tags.map((t) => (
+              <TagPill key={t} name={t} />
+            ))}
+          </div>
+        )}
       </div>
       {hasTimer && <TimerBadge startedAt={activeTimerStartedAt!} />}
-      <div className="flex flex-wrap gap-1 max-w-32 justify-end">
-        {(todo.tags ?? []).map((t) => (
-          <TagPill key={t} name={t} />
-        ))}
-      </div>
       <div className="flex flex-col gap-1 self-stretch">
         <button
           onClick={(e) => {
