@@ -136,6 +136,52 @@ func handleUpdateTodo(d *Deps) http.HandlerFunc {
 	}
 }
 
+func handleMoveTodo(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		var req api.MoveTodoRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+
+		// Snapshot the previous status so the auto-timer hook below can
+		// react to a transition. Same shape as in handleUpdateTodo.
+		var oldStatus api.TodoStatus
+		if req.Status != nil {
+			if prev, err := d.Todos.Get(r.Context(), id); err == nil {
+				oldStatus = prev.Status
+			}
+		}
+
+		t, err := d.Todos.Move(r.Context(), id, req)
+		if errors.Is(err, todo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "todo.not_found", "todo not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "todo.move_failed", err.Error())
+			return
+		}
+
+		// Auto-timer mirrors the PATCH path — start when entering In Progress,
+		// stop when leaving (only the moved todo's session, never siblings').
+		if d.Timer != nil && req.Status != nil && oldStatus != t.Status {
+			ctx := r.Context()
+			switch {
+			case t.Status == api.StatusInProgress:
+				_, _ = d.Timer.Start(ctx, t.ID)
+			case oldStatus == api.StatusInProgress:
+				if _, _, err := d.Timer.Stop(ctx, t.ID); err != nil && !errors.Is(err, timer.ErrNoActiveSession) {
+					_ = err
+				}
+			}
+		}
+
+		writeJSON(w, http.StatusOK, t)
+	}
+}
+
 func handleDeleteTodo(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

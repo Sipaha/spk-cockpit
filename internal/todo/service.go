@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/oklog/ulid/v2"
@@ -201,6 +202,212 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 			At:      now,
 		})
 		s.publish(api.EventTodoUpdated, api.TodoUpdatedData{Todo: updated, ChangedFields: changed})
+	}
+	return updated, nil
+}
+
+// Move places `id` in (possibly new) target column, ordered between AfterID
+// and BeforeID. Server picks a fresh sort_order; if neighbors leave no
+// usable gap (equal values, or a sub-1.0 gap that would soon collide under
+// successive averaging), the entire target column is rebalanced atomically
+// alongside the move.
+//
+// Auto-timer side-effects (start on transition to in_progress, stop on
+// transition out) live in the HTTP handler — same as Service.Update —
+// because they cross domain boundaries.
+func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) (api.Todo, error) {
+	now := s.clock.Now().Unix()
+
+	moved, err := s.todos.Get(ctx, id)
+	if err != nil {
+		return api.Todo{}, err
+	}
+
+	targetCol := moved.Status
+	if req.Status != nil {
+		targetCol = *req.Status
+	}
+
+	// Snapshot the destination column without the moved card so neighbor
+	// math doesn't trip over a stale position.
+	colItems, err := s.todos.List(ctx, TodoFilter{
+		Statuses:    []api.TodoStatus{targetCol},
+		IncludeDone: true,
+	})
+	if err != nil {
+		return api.Todo{}, err
+	}
+	others := make([]api.Todo, 0, len(colItems))
+	for _, t := range colItems {
+		if t.ID != id {
+			others = append(others, t)
+		}
+	}
+	// Sort DESC by sort_order — same as the frontend bucketize. Tie-break by
+	// id so the rebalance pass produces stable values.
+	sort.Slice(others, func(i, j int) bool {
+		if others[i].SortOrder != others[j].SortOrder {
+			return others[i].SortOrder > others[j].SortOrder
+		}
+		return others[i].ID > others[j].ID
+	})
+
+	// Find indices of the requested neighbors. Empty strings or missing IDs
+	// mean "edge of column".
+	afterIdx := -1
+	beforeIdx := -1
+	if req.AfterID != "" {
+		for i, t := range others {
+			if t.ID == req.AfterID {
+				afterIdx = i
+				break
+			}
+		}
+	}
+	if req.BeforeID != "" {
+		for i, t := range others {
+			if t.ID == req.BeforeID {
+				beforeIdx = i
+				break
+			}
+		}
+	}
+
+	// Build the post-drop list (others with the moved card spliced into
+	// position). The split point is one index after the AfterID, or
+	// BeforeID's index if AfterID was unspecified, or the column tail.
+	var insertAt int
+	switch {
+	case afterIdx >= 0 && beforeIdx >= 0:
+		insertAt = afterIdx + 1
+	case afterIdx >= 0:
+		insertAt = afterIdx + 1
+	case beforeIdx >= 0:
+		insertAt = beforeIdx
+	default:
+		insertAt = len(others)
+	}
+	if insertAt < 0 {
+		insertAt = 0
+	}
+	if insertAt > len(others) {
+		insertAt = len(others)
+	}
+
+	post := make([]api.Todo, 0, len(others)+1)
+	post = append(post, others[:insertAt]...)
+	movedCopy := moved
+	post = append(post, movedCopy)
+	post = append(post, others[insertAt:]...)
+
+	// Try the cheap path: average the neighbors of the moved item. Bail to
+	// a column-wide rebalance when the gap is too tight to fit a fresh
+	// value (legacy data or float-precision drift from many halvings).
+	const minGap = 1.0
+	const step = 1024.0
+	var newSortOrder float64
+	rebalance := false
+	if insertAt-1 >= 0 && insertAt < len(others) {
+		above := others[insertAt-1].SortOrder
+		below := others[insertAt].SortOrder
+		gap := above - below
+		if gap < minGap {
+			rebalance = true
+		} else {
+			newSortOrder = (above + below) / 2
+		}
+	} else if insertAt-1 >= 0 {
+		newSortOrder = others[insertAt-1].SortOrder - step
+	} else if insertAt < len(others) {
+		newSortOrder = others[insertAt].SortOrder + step
+	} else {
+		newSortOrder = step
+	}
+	if !rebalance {
+		// Detect collisions elsewhere in the column too, so we don't ship
+		// fresh data on top of a tie that'll bite the next drop.
+		for i := 1; i < len(others); i++ {
+			if others[i-1].SortOrder-others[i].SortOrder < minGap {
+				rebalance = true
+				break
+			}
+		}
+	}
+
+	siblings := []SortOrderUpdate{}
+	if rebalance {
+		base := step * float64(len(post)+1)
+		for i, t := range post {
+			s := base - float64(i+1)*step
+			if t.ID == id {
+				newSortOrder = s
+				continue
+			}
+			siblings = append(siblings, SortOrderUpdate{ID: t.ID, SortOrder: s})
+		}
+	}
+
+	mutate := func(t *api.Todo) error {
+		t.SortOrder = newSortOrder
+		t.UpdatedAt = now
+		if t.Status != targetCol {
+			// Mirror Service.Update's status-side-effects so the column
+			// invariants stay consistent regardless of which entry point
+			// edited the row.
+			if targetCol == api.StatusDone {
+				doneAt := now
+				t.DoneAt = &doneAt
+			} else {
+				t.DoneAt = nil
+				t.DismissedAt = nil
+			}
+			t.Status = targetCol
+		}
+		return nil
+	}
+
+	updated, err := s.todos.MoveAndReorder(ctx, id, mutate, siblings)
+	if err != nil {
+		return api.Todo{}, err
+	}
+	tags, err := s.tags.GetTodoTags(ctx, id)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("get tags: %w", err)
+	}
+	updated.Tags = tags
+
+	statusChanged := moved.Status != updated.Status
+	if statusChanged {
+		_ = s.events.Append(ctx, api.TodoEvent{
+			TodoID:    id,
+			Kind:      "status_changed",
+			FromValue: string(moved.Status),
+			ToValue:   string(updated.Status),
+			At:        now,
+		})
+		s.publish(api.EventTodoStatusChanged, api.TodoStatusChangedData{
+			TodoID: id,
+			From:   moved.Status,
+			To:     updated.Status,
+		})
+	}
+	s.publish(api.EventTodoUpdated, api.TodoUpdatedData{
+		Todo:          updated,
+		ChangedFields: []string{"sortOrder"},
+	})
+	// Notify subscribers about the rebalanced siblings too, so the kanban
+	// can re-sort without a hard reload.
+	for _, sib := range siblings {
+		t, err := s.todos.Get(ctx, sib.ID)
+		if err != nil {
+			continue
+		}
+		stags, _ := s.tags.GetTodoTags(ctx, sib.ID)
+		t.Tags = stags
+		s.publish(api.EventTodoUpdated, api.TodoUpdatedData{
+			Todo:          t,
+			ChangedFields: []string{"sortOrder"},
+		})
 	}
 	return updated, nil
 }

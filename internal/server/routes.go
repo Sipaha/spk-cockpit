@@ -17,6 +17,7 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("POST /api/todos", handleCreateTodo(d))
 	mux.HandleFunc("GET /api/todos/{id}", handleGetTodo(d))
 	mux.HandleFunc("PATCH /api/todos/{id}", handleUpdateTodo(d))
+	mux.HandleFunc("POST /api/todos/{id}/move", handleMoveTodo(d))
 	mux.HandleFunc("DELETE /api/todos/{id}", handleDeleteTodo(d))
 	mux.HandleFunc("POST /api/todos/{id}/restore", handleRestoreTodo(d))
 	mux.HandleFunc("POST /api/todos/{id}/dismiss", handleDismissTodo(d))

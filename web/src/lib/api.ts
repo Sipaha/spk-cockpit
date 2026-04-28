@@ -35,6 +35,14 @@ export const api = {
     request<Todo>("/api/todos", { method: "POST", body: JSON.stringify(req) }),
   updateTodo: (id: string, req: UpdateTodoRequest) =>
     request<Todo>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(req) }),
+  moveTodo: (
+    id: string,
+    req: { afterId?: string; beforeId?: string; status?: string },
+  ) =>
+    request<Todo>(`/api/todos/${id}/move`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
   deleteTodo: (id: string) =>
     request<void>(`/api/todos/${id}`, { method: "DELETE" }),
   restoreTodo: (id: string) =>

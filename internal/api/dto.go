@@ -98,6 +98,17 @@ type UpdateTodoRequest struct {
 	SortOrder *float64    `json:"sortOrder,omitempty"`
 }
 
+// MoveTodoRequest is the body of POST /api/todos/{id}/move. Client says
+// "place this todo after AfterID and/or before BeforeID, optionally moving
+// it to Status". The server picks a sortOrder that satisfies the request,
+// rebalancing the target column atomically when the gap is too tight to fit
+// a fresh value.
+type MoveTodoRequest struct {
+	AfterID  string      `json:"afterId,omitempty"`
+	BeforeID string      `json:"beforeId,omitempty"`
+	Status   *TodoStatus `json:"status,omitempty"`
+}
+
 // ErrorResponse wraps an ErrorBody for parse-friendly client error reporting.
 type ErrorResponse struct {
 	Error ErrorBody `json:"error"`

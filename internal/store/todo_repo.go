@@ -101,6 +101,53 @@ func (r *TodoRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// MoveAndReorder updates the primary todo via mutate (same contract as
+// Update) and rewrites sort_order on the supplied siblings, all in a single
+// transaction. Used by Service.Move so a "drag with column rebalance" lands
+// as one atomic write.
+func (r *TodoRepo) MoveAndReorder(ctx context.Context, primaryID string, mutate func(*api.Todo) error, siblings []todo.SortOrderUpdate) (api.Todo, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
+		FROM todos WHERE id = ? AND deleted_at IS NULL
+	`, primaryID)
+	t, err := scanTodo(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	if err != nil {
+		return api.Todo{}, err
+	}
+	if err := mutate(&t); err != nil {
+		return api.Todo{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE todos SET title=?, notes=?, priority=?, status=?, due_at=?, updated_at=?, done_at=?, sort_order=?, dismissed_at=?
+		WHERE id=?
+	`, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.UpdatedAt, t.DoneAt, t.SortOrder, t.DismissedAt, t.ID); err != nil {
+		return api.Todo{}, fmt.Errorf("update primary: %w", err)
+	}
+	for _, s := range siblings {
+		if s.ID == primaryID {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE todos SET sort_order=?, updated_at=? WHERE id=? AND deleted_at IS NULL`,
+			s.SortOrder, t.UpdatedAt, s.ID); err != nil {
+			return api.Todo{}, fmt.Errorf("update sibling %s: %w", s.ID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return api.Todo{}, fmt.Errorf("commit tx: %w", err)
+	}
+	return t, nil
+}
+
 // Restore clears deleted_at on a previously soft-deleted todo, returning the
 // freshly-undeleted row. Used by the Revert toast and the Trash page.
 func (r *TodoRepo) Restore(ctx context.Context, id string) (api.Todo, error) {

@@ -93,6 +93,36 @@ func (r *Todo) Restore(_ context.Context, id string) (api.Todo, error) {
 	return t, nil
 }
 
+// MoveAndReorder applies mutate to the primary todo and rewrites sort_order
+// on each listed sibling in a single mutex-protected pass.
+func (r *Todo) MoveAndReorder(_ context.Context, primaryID string, mutate func(*api.Todo) error, siblings []todo.SortOrderUpdate) (api.Todo, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.byID[primaryID]
+	if !ok {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	if _, deleted := r.delAt[primaryID]; deleted {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	if err := mutate(&t); err != nil {
+		return api.Todo{}, err
+	}
+	r.byID[primaryID] = t
+	for _, s := range siblings {
+		if s.ID == primaryID {
+			continue
+		}
+		sib, ok := r.byID[s.ID]
+		if !ok {
+			continue
+		}
+		sib.SortOrder = s.SortOrder
+		r.byID[s.ID] = sib
+	}
+	return t, nil
+}
+
 // ListDeleted returns the deleted todos newest-first (best effort, since we
 // don't track deleted_at timestamps in this fake).
 func (r *Todo) ListDeleted(_ context.Context, limit int) ([]api.Todo, error) {
