@@ -53,6 +53,19 @@ function bucketize(todos: Todo[]): Buckets {
     }
     if (t.status in out) out[t.status].push(t);
   }
+  // We can't trust the incoming todos array's order: SSE updates replace a
+  // todo in place without reshuffling, so a sortOrder change leaves the
+  // array stale (the moved card stays in the OLD slot of the array). Sort
+  // each visible bucket the same way the SQL ORDER BY does it.
+  const sortBucket = (xs: Todo[]) =>
+    xs.sort((a, b) =>
+      b.sortOrder !== a.sortOrder
+        ? b.sortOrder - a.sortOrder
+        : b.createdAt - a.createdAt,
+    );
+  sortBucket(out.open);
+  sortBucket(out.in_progress);
+  sortBucket(out.done);
   return out;
 }
 
