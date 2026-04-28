@@ -10,11 +10,13 @@ build-fast:
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build -trimpath -tags "webkit2_41 production" -o $(BIN) ./cmd/cockpit
 
-# build-dev drops the `production` tag so the embedded webkit2gtk shows the
-# Web Inspector on F12 / right-click → Inspect Element. Used by `make run`.
+# build-dev swaps `production` for `dev` so the embedded webkit2gtk enables
+# developer extras (F12 / right-click → Inspect Element). Wails refuses to
+# launch a binary built without one of `production` or `dev`. Used by
+# `make run`.
 build-dev:
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build -trimpath -tags "webkit2_41" -o $(BIN) ./cmd/cockpit
+	$(GO) build -trimpath -tags "webkit2_41 dev" -o $(BIN) ./cmd/cockpit
 
 web-build:
 	cd web && pnpm install --frozen-lockfile && pnpm build
