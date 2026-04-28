@@ -261,7 +261,15 @@ export function TodoBoard() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Todos</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-semibold">Todos</h2>
+          <button
+            onClick={() => setModal({ mode: "new" })}
+            className="flex items-center gap-1 px-3 py-1.5 bg-accent text-bg rounded text-sm hover:opacity-90"
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setBacklogModalOpen(true)}
@@ -301,16 +309,6 @@ export function TodoBoard() {
               id={col.id}
               label={col.label}
               items={view[col.id]}
-              footer={
-                col.id === "open" ? (
-                  <button
-                    onClick={() => setModal({ mode: "new" })}
-                    className="flex items-center justify-center gap-1 w-full py-2 text-fgmute hover:text-fg hover:bg-bg rounded text-sm border border-dashed border-bgmute hover:border-fgmute"
-                  >
-                    <Plus size={14} /> Add todo
-                  </button>
-                ) : undefined
-              }
               renderCard={(t) => (
                 <SortableCard key={t.id} todo={t}>
                   <TodoRow {...cardProps(t)} />
@@ -432,12 +430,9 @@ interface ColumnProps {
   label: string;
   items: Todo[];
   renderCard: (t: Todo) => React.ReactNode;
-  // Optional bottom slot — used by the To Do column to host the
-  // "+ Add todo" button without spilling it into the global header.
-  footer?: React.ReactNode;
 }
 
-function Column({ id, label, items, renderCard, footer }: ColumnProps) {
+function Column({ id, label, items, renderCard }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
     <div
@@ -458,12 +453,11 @@ function Column({ id, label, items, renderCard, footer }: ColumnProps) {
           {items.map((t) => renderCard(t))}
         </div>
       </SortableContext>
-      {items.length === 0 && !footer && (
+      {items.length === 0 && (
         <div className="text-fgmute text-xs text-center py-6 border border-dashed border-bgmute rounded">
           drop here
         </div>
       )}
-      {footer && <div className="mt-1">{footer}</div>}
     </div>
   );
 }
