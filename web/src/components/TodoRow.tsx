@@ -1,4 +1,4 @@
-import { Pencil, Trash2, X } from "lucide-react";
+import { Inbox, Pencil, Trash2, X } from "lucide-react";
 import type { Todo } from "../lib/types";
 import { Priority } from "../lib/types";
 import { TagPill } from "./TagPill";
@@ -33,6 +33,9 @@ export interface TodoRowProps {
   onView: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
   onHide?: (todo: Todo) => void;
+  // Park a To Do card in the backlog. Only wired up by the parent for
+  // status === "open" cards.
+  onBacklog?: (todo: Todo) => void;
 }
 
 export function TodoRow({
@@ -43,10 +46,12 @@ export function TodoRow({
   onView,
   onEdit,
   onHide,
+  onBacklog,
 }: TodoRowProps) {
   const isDone = todo.status === "done";
   const hasTimer = activeTimerStartedAt !== null;
   const canDelete = todo.status === "open";
+  const canBacklog = todo.status === "open" && !!onBacklog;
 
   const titleLine = firstLine(todo.title);
   const notesLine = todo.notes ? firstLine(todo.notes) : "";
@@ -90,6 +95,19 @@ export function TodoRow({
         >
           <Pencil size={16} />
         </button>
+        {canBacklog && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onBacklog!(todo);
+            }}
+            className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-accent"
+            aria-label="Move to backlog"
+            title="Move to backlog"
+          >
+            <Inbox size={16} />
+          </button>
+        )}
         {canDelete && (
           <button
             onClick={(e) => {

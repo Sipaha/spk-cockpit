@@ -1,7 +1,7 @@
 export type Priority = 0 | 1 | 2 | 3;
 export const Priority = { Low: 0, Normal: 1, High: 2, Urgent: 3 } as const;
 
-export type TodoStatus = "open" | "in_progress" | "done" | "cancelled";
+export type TodoStatus = "open" | "in_progress" | "done" | "cancelled" | "backlog";
 
 export interface Todo {
   id: string;

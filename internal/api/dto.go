@@ -21,6 +21,10 @@ const (
 	StatusInProgress TodoStatus = "in_progress"
 	StatusDone       TodoStatus = "done"
 	StatusCancelled  TodoStatus = "cancelled"
+	// StatusBacklog parks a todo outside the kanban without deleting it.
+	// The board renders only open/in_progress/done; backlog items live in
+	// a dedicated panel from which the user can promote them back to To Do.
+	StatusBacklog TodoStatus = "backlog"
 )
 
 // Todo is the canonical todo DTO.

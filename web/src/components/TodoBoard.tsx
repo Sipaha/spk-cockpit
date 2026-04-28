@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Tag as TagIcon, Trash2 as Trash2Icon } from "lucide-react";
+import { Inbox, Plus, Tag as TagIcon, Trash2 as Trash2Icon } from "lucide-react";
 
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
@@ -24,6 +24,7 @@ import { Priority } from "../lib/types";
 import { TodoRow } from "./TodoRow";
 import { TodoEditorModal } from "./TodoEditorModal";
 import { TodoViewModal } from "./TodoViewModal";
+import { BacklogList } from "./BacklogList";
 import { TagsManager } from "./TagsManager";
 import { TrashList } from "./TrashList";
 import { UndoToast } from "./UndoToast";
@@ -40,7 +41,9 @@ const DONE_VISIBLE_DAYS = 3;
 type Buckets = Record<TodoStatus, Todo[]>;
 
 function bucketize(todos: Todo[]): Buckets {
-  const out: Buckets = { open: [], in_progress: [], done: [], cancelled: [] };
+  // backlog and cancelled buckets exist only to satisfy the Buckets type
+  // contract; the kanban renders only open/in_progress/done.
+  const out: Buckets = { open: [], in_progress: [], done: [], cancelled: [], backlog: [] };
   const cutoff = Math.floor(Date.now() / 1000) - DONE_VISIBLE_DAYS * 24 * 3600;
   for (const t of todos) {
     if (t.status === "done") {
@@ -98,6 +101,7 @@ export function TodoBoard() {
   const [modal, setModal] = useState<ModalState>(null);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [trashModalOpen, setTrashModalOpen] = useState(false);
+  const [backlogModalOpen, setBacklogModalOpen] = useState(false);
   const [undo, setUndo] = useState<Todo | null>(null);
   // Reading s.tags directly keeps the selector referentially stable; mapping
   // to names runs in a memo so we don't trigger Zustand's "snapshot changed
@@ -164,6 +168,7 @@ export function TodoBoard() {
       in_progress: view.in_progress.slice(),
       done: view.done.slice(),
       cancelled: view.cancelled,
+      backlog: view.backlog,
     };
     next[fromCol] = next[fromCol].filter((t) => t.id !== id);
     const updated: Todo = { ...moved, status: toCol, sortOrder: newSortOrder };
@@ -208,6 +213,14 @@ export function TodoBoard() {
       // ignore — failure leaves the card visible; user can retry.
     }
   }
+  async function sendToBacklog(todo: Todo) {
+    try {
+      await api.updateTodo(todo.id, { status: "backlog" });
+    } catch {
+      // ignore — SSE event would have echoed success; failures are usually
+      // transient and the user can retry.
+    }
+  }
 
   // Save handler for the create modal: parse the first line for #tags,
   // !priority, due:… via the same quick-add parser the previous inline form
@@ -241,6 +254,7 @@ export function TodoBoard() {
       onView: openView,
       onEdit: openEdit,
       onHide: t.status === "done" ? hideFromDone : undefined,
+      onBacklog: t.status === "open" ? sendToBacklog : undefined,
     };
   };
 
@@ -249,6 +263,13 @@ export function TodoBoard() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Todos</h2>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setBacklogModalOpen(true)}
+            title="Open backlog"
+            className="flex items-center gap-1 px-3 py-1.5 text-fgmute hover:text-fg rounded text-sm border border-bgmute hover:border-fgmute"
+          >
+            <Inbox size={14} /> Backlog
+          </button>
           <button
             onClick={() => setTagsModalOpen(true)}
             title="Manage tags"
@@ -347,6 +368,25 @@ export function TodoBoard() {
               </button>
             </div>
             <TagsManager />
+          </div>
+        </div>
+      )}
+      {backlogModalOpen && (
+        <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6">
+          <div className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-fgmute text-xs uppercase tracking-wide">Backlog</div>
+              <button
+                onClick={() => setBacklogModalOpen(false)}
+                className="text-fgmute hover:text-fg text-sm"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-fgmute text-sm">
+              Parked todos. Click the arrow to promote one back to To Do.
+            </p>
+            <BacklogList />
           </div>
         </div>
       )}
