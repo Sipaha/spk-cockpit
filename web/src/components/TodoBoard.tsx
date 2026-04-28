@@ -205,7 +205,11 @@ export function TodoBoard() {
         beforeId,
         status: sameColumn ? undefined : toCol,
       });
-    } catch {
+    } catch (err) {
+      // Surface the failure so a stale daemon binary (no /move endpoint) or
+      // a 4xx from the server doesn't just look like a silent revert.
+      // eslint-disable-next-line no-console
+      console.error("[todo move] request failed, reverting card", err);
       setOverride(null);
     }
   }
