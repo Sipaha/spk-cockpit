@@ -35,7 +35,18 @@ func New(a Actions) Backend {
 }
 
 // Run starts the tray loop. onReady fires after icon/menu are visible.
+//
+// SetOnTapped MUST be called before systray.Run: fyne.io/systray decides the
+// StatusNotifierItem `ItemIsMenu` property at registration time based on
+// whether tappedLeft is nil. If we set it inside the onReady callback the
+// panel already sees ItemIsMenu=true and routes LMB to the menu instead of
+// invoking Activate.
 func (t *linuxTray) Run(onReady func(), onExit func()) {
+	systray.SetOnTapped(func() {
+		if t.actions.OpenWindow != nil {
+			go t.actions.OpenWindow()
+		}
+	})
 	systray.Run(func() {
 		systray.SetIcon(appfiles.TrayIcon)
 		systray.SetTooltip("spk-cockpit")

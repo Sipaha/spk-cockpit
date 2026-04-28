@@ -39,7 +39,7 @@ Description=spk-cockpit personal productivity tray
 After=graphical-session.target
 
 [Service]
-ExecStart=%s start --foreground
+ExecStart=%s
 Restart=on-failure
 RestartSec=5
 

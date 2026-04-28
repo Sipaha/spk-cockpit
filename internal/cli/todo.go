@@ -230,7 +230,7 @@ func newClient() (*Client, error) {
 	}
 	c := NewClient(p.SocketFile)
 	if err := c.Health(context.Background()); err != nil {
-		return nil, fmt.Errorf("daemon not reachable (run `cockpit start`): %w", err)
+		return nil, fmt.Errorf("daemon not reachable (run `spk-cockpit`): %w", err)
 	}
 	return c, nil
 }

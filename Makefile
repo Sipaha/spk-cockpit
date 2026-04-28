@@ -33,8 +33,8 @@ tidy:
 clean:
 	rm -rf $(BUILD_DIR) web/dist web/embed/dist
 
-run: build-fast
-	$(BIN) start --foreground
+run: build
+	$(BIN)
 
 licenses:
 	./scripts/gen-third-party-licenses.sh

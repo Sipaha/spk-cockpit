@@ -34,6 +34,6 @@ func TestLinux_UnitTemplate_ContainsExePath(t *testing.T) {
 
 	// Recreate via Install would try to invoke systemctl; instead, test the format string.
 	content := unitTemplate
-	require.True(t, strings.Contains(content, "ExecStart=%s start --foreground"))
+	require.True(t, strings.Contains(content, "ExecStart=%s"))
 	require.True(t, strings.Contains(content, "WantedBy=default.target"))
 }

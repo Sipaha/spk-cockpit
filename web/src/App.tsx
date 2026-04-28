@@ -28,13 +28,12 @@ function MainShell() {
   return (
     <div className="min-h-screen flex">
       <aside className="w-48 bg-bgsub border-r border-bgmute p-4">
-        <h1 className="text-lg font-semibold mb-4">spk-cockpit</h1>
+        <h1 className="text-lg font-semibold mb-4">SPK Cockpit</h1>
         <nav className="flex flex-col gap-1">
           {navItem("/", "Todos")}
           {navItem("/calendar", "Calendar")}
           {navItem("/standup", "Standup")}
           {navItem("/settings", "Settings")}
-          {navItem("/popover", "Compact view")}
         </nav>
       </aside>
       <main className="flex-1 p-6 overflow-auto">

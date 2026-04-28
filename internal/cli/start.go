@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -37,21 +38,10 @@ import (
 	webembed "github.com/spk/spk-cockpit/web/embed"
 )
 
-var startFlags struct {
-	foreground bool
-}
-
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start the spk-cockpit daemon",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runStart(cmd.Context())
-	},
-}
-
 func init() {
-	startCmd.Flags().BoolVar(&startFlags.foreground, "foreground", false, "Run in foreground (do not fork)")
-	rootCmd.AddCommand(startCmd)
+	rootCmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		return runStart(cmd.Context())
+	}
 }
 
 func runStart(ctx context.Context) error {
@@ -294,10 +284,32 @@ func runStart(ctx context.Context) error {
 	}
 	go tray.NewSubscriber(bus, trayBackend, todoSvc, mtgFetch).Run(ctx)
 
+	geomKv := store.NewKvRepo(st.DB)
+	loadGeometry := func() *window.Geometry {
+		v, ok, err := geomKv.Get(context.Background(), "window.geometry")
+		if err != nil || !ok || v == "" {
+			return nil
+		}
+		var g window.Geometry
+		if err := json.Unmarshal([]byte(v), &g); err != nil {
+			return nil
+		}
+		return &g
+	}
+	saveGeometry := func(g window.Geometry) {
+		b, err := json.Marshal(g)
+		if err != nil {
+			return
+		}
+		if err := geomKv.Set(context.Background(), "window.geometry", string(b)); err != nil {
+			logger.Warn("save window geometry failed", "err", err)
+		}
+	}
+
 	// Wails owns the main thread.
 	winErr := window.Run(webembed.DistFS, p.SocketFile, func(a *window.App) {
 		winApp = a
-	})
+	}, loadGeometry, saveGeometry)
 	logger.Info("window closed", "err", winErr)
 
 	cancel()

@@ -16,6 +16,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/spk/spk-cockpit/internal/appfiles"
 )
 
 // App holds the running Wails context and lets external code bring the window forward.
@@ -84,10 +86,19 @@ func RunPopup(assets embed.FS, socketPath, meetingID string) error {
 	})
 }
 
+// Geometry is the persisted window position and size.
+type Geometry struct {
+	X, Y, Width, Height int
+}
+
 // Run starts the Wails event loop. It blocks until the window is closed.
 // ready is invoked once the App is constructed (before the loop spins up) so callers
 // can capture a handle for tray actions.
-func Run(assets embed.FS, socketPath string, ready func(*App)) error {
+//
+// loadGeometry returns previously persisted window geometry (or nil for first
+// run); saveGeometry is invoked at shutdown so size and position survive
+// restarts. Either may be nil to disable persistence.
+func Run(assets embed.FS, socketPath string, ready func(*App), loadGeometry func() *Geometry, saveGeometry func(Geometry)) error {
 	app := NewApp(socketPath)
 	go func() {
 		// Give Wails a beat to wire OnStartup; ready receives the app handle either way.
@@ -97,17 +108,45 @@ func Run(assets embed.FS, socketPath string, ready func(*App)) error {
 		}
 	}()
 
+	width, height := 1100, 720
+	var startX, startY int
+	hasPos := false
+	if loadGeometry != nil {
+		if g := loadGeometry(); g != nil {
+			if g.Width > 0 && g.Height > 0 {
+				width, height = g.Width, g.Height
+			}
+			if g.X != 0 || g.Y != 0 {
+				startX, startY = g.X, g.Y
+				hasPos = true
+			}
+		}
+	}
+
 	return wails.Run(&options.App{
-		Title:  "spk-cockpit",
-		Width:  1100,
-		Height: 720,
+		Title:  "SPK Cockpit",
+		Width:  width,
+		Height: height,
 		AssetServer: &assetserver.Options{
 			Assets:     assets,
 			Middleware: udsMiddleware(socketPath),
 		},
 		HideWindowOnClose: true,
-		Linux:             &linux.Options{ProgramName: "spk-cockpit"},
+		Linux:             &linux.Options{ProgramName: "spk-cockpit", Icon: appfiles.AppIcon},
 		OnStartup:         app.onStartup,
+		OnDomReady: func(ctx context.Context) {
+			if hasPos {
+				wruntime.WindowSetPosition(ctx, startX, startY)
+			}
+		},
+		OnShutdown: func(ctx context.Context) {
+			if saveGeometry == nil {
+				return
+			}
+			x, y := wruntime.WindowGetPosition(ctx)
+			w, h := wruntime.WindowGetSize(ctx)
+			saveGeometry(Geometry{X: x, Y: y, Width: w, Height: h})
+		},
 	})
 }
 
