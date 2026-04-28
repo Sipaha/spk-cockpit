@@ -17,6 +17,7 @@ interface AppState {
   tags: Tag[];
 
   trackerUrlTemplate: string;
+  trackerTicketPattern: string;
 
   load: () => Promise<void>;
   setIncludeDone: (v: boolean) => void;
@@ -39,6 +40,7 @@ export const useTodoStore = create<AppState>((set, get) => ({
   syncStates: [],
   tags: [],
   trackerUrlTemplate: "",
+  trackerTicketPattern: "",
 
   async load() {
     set({ loading: true, error: null });
@@ -88,10 +90,16 @@ export const useTodoStore = create<AppState>((set, get) => ({
   },
   async loadTrackerTemplate() {
     try {
-      const r = await api.getKv("tracker.url_template");
-      set({ trackerUrlTemplate: r.value ?? "" });
+      const [tpl, pat] = await Promise.all([
+        api.getKv("tracker.url_template"),
+        api.getKv("tracker.ticket_pattern"),
+      ]);
+      set({
+        trackerUrlTemplate: tpl.value ?? "",
+        trackerTicketPattern: pat.value ?? "",
+      });
     } catch {
-      set({ trackerUrlTemplate: "" });
+      set({ trackerUrlTemplate: "", trackerTicketPattern: "" });
     }
   },
 

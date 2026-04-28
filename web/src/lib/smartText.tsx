@@ -1,21 +1,28 @@
 import type { MouseEvent, ReactNode } from "react";
 
-// Universal "task tracker" rendering. The user configures a single URL
-// template like https://jira.example.com/browse/{id} (Jira-style) or
-// https://citeck.ecos24.ru/v2/dashboard?ws={project}&recordRef=emodel/ept-issue@{id}
-// (Citeck-style) in Settings. {id} expands to the full ticket id
-// (e.g. COREDEV-197) and {project} to the part before the dash.
+// Universal task-tracker rendering driven by two user-supplied regexes:
 //
-// Given that template, both:
-//   1) full URLs that share the template's host AND contain a ticket-shaped
-//      substring,
-//   2) bare ticket tokens like COREDEV-197 in plain text,
-// render as a single clickable [TICKET-ID] anchor pointing at the resolved
-// tracker URL. Other URLs become normal clickable anchors. Plain text falls
-// through unchanged.
+//   tickerPattern — matches a ticket reference in any text (captures the
+//                   parts that should be reusable in the URL/display).
+//                   Default: \b([A-Z][A-Z0-9_]*-\d+)\b — captures things
+//                   like COREDEV-197 or PROJ_2-5.
+//   urlTemplate   — string with $1, $2, $0 backrefs that resolves to a
+//                   browseable URL when applied to a tickerPattern match.
+//                   Empty disables tracker linkification entirely.
+//
+// Detection runs in two passes:
+//   1. Greedy URL spans: we find https://… runs first and run tickerPattern
+//      on each of them. If a URL contains a ticket, the whole URL collapses
+//      to a single [$1] anchor pointing at the resolved tracker URL.
+//      If it doesn't, the URL stays as a plain external link.
+//   2. The remaining (non-URL) text gets a second tickerPattern pass for
+//      bare references like "fix COREDEV-197 by Friday".
+//
+// Anchor click handlers stop propagation so opening a ticket from inside a
+// clickable card body doesn't also fire the card's edit handler.
 
 const URL_RE = /https?:\/\/[^\s<>"\\]+/g;
-const TICKET_RE = /\b([A-Z][A-Z0-9_]*-\d+)\b/g;
+export const DEFAULT_TICKET_PATTERN = String.raw`\b([A-Z][A-Z0-9_]*-\d+)\b`;
 
 function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,78 +33,84 @@ function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
   }
 }
 
-export function resolveTracker(template: string, ticket: string): string | null {
-  if (!template) return null;
-  const dash = ticket.indexOf("-");
-  if (dash <= 0) return null;
-  const project = ticket.slice(0, dash);
-  return template.replaceAll("{id}", ticket).replaceAll("{project}", project);
+// applyBackrefs replaces $0, $1, $2, … in `template` with the corresponding
+// regex match groups. $0 is the full match; everything past the captures
+// list is left untouched. $$ keeps a literal dollar.
+function applyBackrefs(template: string, match: RegExpMatchArray): string {
+  return template.replace(/\$(\d+)|\$\$/g, (whole, num) => {
+    if (whole === "$$") return "$";
+    const i = Number(num);
+    if (i === 0) return match[0];
+    return match[i] ?? "";
+  });
 }
 
-function templateHost(template: string): string | null {
+function compilePattern(src: string): RegExp | null {
+  if (!src) return null;
   try {
-    return new URL(
-      template.replaceAll("{id}", "X-1").replaceAll("{project}", "X"),
-    ).host.toLowerCase();
+    // Force a global flag so matchAll finds every occurrence; user-supplied
+    // flags like /i are honored otherwise.
+    return new RegExp(src, "g");
   } catch {
     return null;
   }
 }
 
-function urlMatchesTemplate(url: string, host: string | null): string | null {
-  if (!host) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.host.toLowerCase() !== host) return null;
-  // Greedy ticket lookup inside the URL — works whether the id sits in the
-  // path (Jira) or inside a query value (Citeck recordRef=…@TICKET).
-  const m = url.match(/[A-Z][A-Z0-9_]*-\d+/);
-  return m ? m[0] : null;
+// firstMatch returns the first match of pattern in text without disturbing
+// matchAll callers — re-compiles a non-global copy of the pattern.
+function firstMatch(pattern: RegExp, text: string): RegExpMatchArray | null {
+  const single = new RegExp(pattern.source, pattern.flags.replace("g", ""));
+  return text.match(single);
 }
 
-export function renderSmart(text: string, template: string): ReactNode[] {
+export interface TrackerConfig {
+  pattern: string; // regex source
+  urlTemplate: string;
+}
+
+export function renderSmart(text: string, cfg: TrackerConfig): ReactNode[] {
   if (!text) return [];
-
-  const host = template ? templateHost(template) : null;
+  const trackerOn = !!cfg.urlTemplate;
+  const ticket = trackerOn
+    ? compilePattern(cfg.pattern || DEFAULT_TICKET_PATTERN)
+    : null;
 
   type Range = { start: number; end: number; node: ReactNode };
   const ranges: Range[] = [];
 
-  // Full URLs first — they own their span so a contained ticket pattern
-  // doesn't get linkified twice.
+  // Pass 1: URLs.
   for (const m of text.matchAll(URL_RE)) {
     const start = m.index ?? 0;
     const url = m[0];
-    const ticketInUrl = urlMatchesTemplate(url, host);
-    if (ticketInUrl && template) {
-      const resolved = resolveTracker(template, ticketInUrl) ?? url;
-      ranges.push({
-        start,
-        end: start + url.length,
-        node: anchor(start, resolved, `[${ticketInUrl}]`),
-      });
-    } else {
-      ranges.push({
-        start,
-        end: start + url.length,
-        node: anchor(start, url, url),
-      });
+    let collapsed: { url: string; label: string } | null = null;
+    if (ticket) {
+      const inUrl = firstMatch(ticket, url);
+      if (inUrl) {
+        const built = applyBackrefs(cfg.urlTemplate, inUrl);
+        collapsed = { url: built, label: `[${inUrl[1] ?? inUrl[0]}]` };
+      }
     }
+    ranges.push({
+      start,
+      end: start + url.length,
+      node: collapsed
+        ? anchor(start, collapsed.url, collapsed.label)
+        : anchor(start, url, url),
+    });
   }
 
-  // Bare ticket ids — only when the user has configured a template.
-  if (template) {
-    for (const m of text.matchAll(TICKET_RE)) {
+  // Pass 2: bare ticket references in non-URL spans.
+  if (ticket) {
+    for (const m of text.matchAll(ticket)) {
       const start = m.index ?? 0;
       const end = start + m[0].length;
       if (ranges.some((r) => start < r.end && end > r.start)) continue;
-      const url = resolveTracker(template, m[1]);
-      if (!url) continue;
-      ranges.push({ start, end, node: anchor(start, url, `[${m[1]}]`) });
+      const url = applyBackrefs(cfg.urlTemplate, m);
+      ranges.push({
+        start,
+        end,
+        node: anchor(start, url, `[${m[1] ?? m[0]}]`),
+      });
     }
   }
 

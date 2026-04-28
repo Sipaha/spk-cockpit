@@ -6,6 +6,7 @@ export function Settings() {
   const [defaultNotifyMin, setDefaultNotifyMin] = useState("5");
   const [defaultPopupMin, setDefaultPopupMin] = useState("1");
   const [trackerTemplate, setTrackerTemplate] = useState("");
+  const [trackerPattern, setTrackerPattern] = useState("");
   const [savingNotify, setSavingNotify] = useState(false);
   const [savingPopup, setSavingPopup] = useState(false);
   const [savingTracker, setSavingTracker] = useState(false);
@@ -15,12 +16,16 @@ export function Settings() {
     void api.getKv("meeting.default_notify_min").then((r) => r.value && setDefaultNotifyMin(r.value));
     void api.getKv("meeting.default_popup_min").then((r) => r.value && setDefaultPopupMin(r.value));
     void api.getKv("tracker.url_template").then((r) => setTrackerTemplate(r.value ?? ""));
+    void api.getKv("tracker.ticket_pattern").then((r) => setTrackerPattern(r.value ?? ""));
   }, []);
 
   async function saveTracker() {
     setSavingTracker(true);
     try {
-      await api.setKv("tracker.url_template", trackerTemplate.trim());
+      await Promise.all([
+        api.setKv("tracker.url_template", trackerTemplate.trim()),
+        api.setKv("tracker.ticket_pattern", trackerPattern.trim()),
+      ]);
       setSavedAt(new Date().toLocaleTimeString());
     } finally {
       setSavingTracker(false);
@@ -108,28 +113,38 @@ export function Settings() {
       <section className="flex flex-col gap-3">
         <h3 className="text-fgmute uppercase text-xs">Task tracker</h3>
         <p className="text-fgmute text-sm">
-          URL template that turns ticket ids in todo cards into clickable links.
-          Use{" "}
-          <code className="text-fg">{"{id}"}</code> for the full ticket
-          (e.g. COREDEV-197) and{" "}
-          <code className="text-fg">{"{project}"}</code> for the project prefix
-          (COREDEV).
+          Two regex-driven knobs that turn ticket references in todo cards
+          into clickable links: a pattern that detects ticket ids in any
+          text and a URL template that builds a browseable URL from the
+          captured groups.
         </p>
         <label className="flex flex-col gap-1">
-          <span className="text-sm">Ticket URL template</span>
+          <span className="text-sm">Ticket regex (capture groups feed the URL template)</span>
+          <input
+            type="text"
+            value={trackerPattern}
+            onChange={(e) => setTrackerPattern(e.target.value)}
+            placeholder={String.raw`\b([A-Z][A-Z0-9_]*-\d+)\b`}
+            className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg font-mono text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm">URL template ($0 = full match, $1, $2… = capture groups)</span>
           <input
             type="text"
             value={trackerTemplate}
             onChange={(e) => setTrackerTemplate(e.target.value)}
-            placeholder="https://jira.example.com/browse/{id}"
+            placeholder="https://jira.example.com/browse/$1"
             className="bg-bgsub border border-bgmute rounded px-3 py-2 focus:outline-none focus:border-accent text-fg font-mono text-sm"
           />
         </label>
-        <p className="text-fgmute text-xs">
-          Example for Jira: <code>https://jira.example.com/browse/{"{id}"}</code>
-          {" · "}
-          for Citeck: <code>https://citeck.ecos24.ru/v2/dashboard?ws={"{project}"}&recordRef=emodel/ept-issue@{"{id}"}</code>
-          {" · "}leave empty to disable.
+        <p className="text-fgmute text-xs leading-relaxed">
+          Defaults: pattern <code>{String.raw`\b([A-Z][A-Z0-9_]*-\d+)\b`}</code>
+          {" "}captures common ticket ids (COREDEV-197, PROJ_2-5).
+          {" "}Examples for the URL template:
+          {" "}<code>https://jira.example.com/browse/$1</code> (Jira),
+          {" "}<code>https://citeck.ecos24.ru/v2/dashboard?ws=COREDEV&recordRef=emodel/ept-issue@$1</code> (Citeck, single workspace).
+          {" "}Leave the URL template empty to disable.
         </p>
         <div>
           <button

@@ -64,7 +64,12 @@ export function TodoBoard() {
     loadTags,
     loadTrackerTemplate,
     trackerUrlTemplate,
+    trackerTicketPattern,
   } = useTodoStore();
+  const tracker = useMemo(
+    () => ({ pattern: trackerTicketPattern, urlTemplate: trackerUrlTemplate }),
+    [trackerTicketPattern, trackerUrlTemplate],
+  );
 
   useEffect(() => {
     setIncludeDone(true);
@@ -222,7 +227,7 @@ export function TodoBoard() {
     return {
       todo: t,
       activeTimerStartedAt: session ? session.startedAt : null,
-      trackerUrlTemplate,
+      tracker,
       onDelete: remove,
       onEdit: openEdit,
       onHide: t.status === "done" ? hideFromDone : undefined,
