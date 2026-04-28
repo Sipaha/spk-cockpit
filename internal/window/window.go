@@ -32,10 +32,21 @@ func NewApp(socketPath string) *App { return &App{socketPath: socketPath} }
 func (a *App) onStartup(ctx context.Context) { a.ctx = ctx }
 
 // Show brings the main window forward.
+//
+// Wails v2 has no direct raise/focus runtime call. On Linux/X11
+// WindowShow alone only un-hides the window; if it's already mapped but
+// covered by other windows, the WM keeps it underneath. Toggling
+// AlwaysOnTop right around WindowShow nudges the WM to actually raise the
+// window and hand it focus, then we drop the flag so it doesn't pin
+// permanently.
 func (a *App) Show() {
-	if a.ctx != nil {
-		wruntime.WindowShow(a.ctx)
+	if a.ctx == nil {
+		return
 	}
+	wruntime.WindowUnminimise(a.ctx)
+	wruntime.WindowSetAlwaysOnTop(a.ctx, true)
+	wruntime.WindowShow(a.ctx)
+	wruntime.WindowSetAlwaysOnTop(a.ctx, false)
 }
 
 // Quit stops the Wails event loop so the surrounding process can exit. Used by
@@ -54,7 +65,7 @@ func (a *App) ShowAt(path string) {
 	if a.ctx == nil {
 		return
 	}
-	wruntime.WindowShow(a.ctx)
+	a.Show()
 	// Use history.pushState so the React router (BrowserRouter) picks it up
 	// without a full reload. We dispatch popstate so listeners refresh.
 	js := "history.pushState(null,'',\"" + path + "\");window.dispatchEvent(new PopStateEvent('popstate'));"
