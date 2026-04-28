@@ -142,7 +142,21 @@ export function TodoBoard() {
     let dropIndex = dest.length;
     if (overId !== toCol) {
       const i = dest.findIndex((t) => t.id === overId);
-      if (i >= 0) dropIndex = i;
+      if (i >= 0) {
+        dropIndex = i;
+        // If the dragged card's center sits below the over-card's center,
+        // treat the drop as "after" instead of "before". Without this,
+        // releasing past the bottom of the last card snapped the card back
+        // because the over-id was still that last card and we always
+        // inserted before it.
+        const overRect = e.over?.rect;
+        const activeRect = e.active.rect.current.translated;
+        if (overRect && activeRect) {
+          const overCenter = overRect.top + overRect.height / 2;
+          const activeCenter = activeRect.top + activeRect.height / 2;
+          if (activeCenter > overCenter) dropIndex = i + 1;
+        }
+      }
     }
 
     const above = dest[dropIndex - 1];
