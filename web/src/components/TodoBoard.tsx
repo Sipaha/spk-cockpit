@@ -437,24 +437,24 @@ function Column({ id, label, items, renderCard }: ColumnProps) {
   return (
     <div
       ref={setNodeRef}
-      className={`bg-bgsub rounded p-3 flex flex-col gap-2 min-h-48 transition-colors ${
+      className={`bg-bgsub rounded-lg p-3 flex flex-col gap-3 min-h-48 transition-colors ${
         isOver ? "ring-1 ring-accent" : ""
       }`}
     >
-      <h3 className="text-fgmute text-xs uppercase tracking-wide flex justify-between">
+      <h3 className="text-fgmute text-[11px] uppercase tracking-wider font-semibold flex justify-between items-center px-1">
         <span>{label}</span>
-        <span>{items.length}</span>
+        <span className="text-fgmute/70 text-xs font-normal">{items.length}</span>
       </h3>
       <SortableContext
         items={items.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           {items.map((t) => renderCard(t))}
         </div>
       </SortableContext>
       {items.length === 0 && (
-        <div className="text-fgmute text-xs text-center py-6 border border-dashed border-bgmute rounded">
+        <div className="text-fgmute/70 text-xs text-center py-8 border border-dashed border-bgmute/60 rounded-md">
           drop here
         </div>
       )}
@@ -491,7 +491,7 @@ function SortableCard({ todo, children }: SortableCardProps) {
       style={style}
       {...attributes}
       {...listeners}
-      className="bg-bg rounded cursor-grab active:cursor-grabbing"
+      className="bg-bg rounded-md border border-bgmute hover:border-fgmute hover:shadow-md transition-[border-color,box-shadow] cursor-grab active:cursor-grabbing overflow-hidden"
     >
       {children}
     </div>
