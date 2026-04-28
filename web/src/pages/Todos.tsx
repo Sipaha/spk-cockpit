@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { TodoList } from "../components/TodoList";
+import { TodoBoard } from "../components/TodoBoard";
 import { AddTodoForm } from "../components/AddTodoForm";
 import { EventStream } from "../lib/events";
 import { useTodoStore } from "../lib/store";
@@ -19,9 +19,9 @@ export function Todos() {
   }, [applyEvent]);
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <AddTodoForm />
-      <TodoList />
+      <TodoBoard />
     </div>
   );
 }

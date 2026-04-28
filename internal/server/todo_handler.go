@@ -91,6 +91,18 @@ func handleUpdateTodo(d *Deps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
+
+		// Snapshot the previous status so the auto-timer hook below can tell
+		// whether this PATCH is an in_progress transition. We can't infer it
+		// from the response alone — req.Status may be a no-op for the same
+		// status the todo already had.
+		var oldStatus api.TodoStatus
+		if req.Status != nil {
+			if prev, err := d.Todos.Get(r.Context(), id); err == nil {
+				oldStatus = prev.Status
+			}
+		}
+
 		t, err := d.Todos.Update(r.Context(), id, req)
 		if errors.Is(err, todo.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "todo.not_found", "todo not found")
@@ -100,6 +112,26 @@ func handleUpdateTodo(d *Deps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "todo.update_failed", err.Error())
 			return
 		}
+
+		// Auto-timer: dragging a card into "In Progress" should start tracking
+		// time on it; pulling it out should stop. We only stop when the active
+		// session belongs to *this* todo so a manually-running timer for some
+		// other task isn't yanked when the user moves an unrelated card.
+		if d.Timer != nil && req.Status != nil && oldStatus != t.Status {
+			ctx := r.Context()
+			switch {
+			case t.Status == api.StatusInProgress:
+				if _, err := d.Timer.Start(ctx, t.ID); err != nil {
+					// Logged at the layer above; don't fail the PATCH for it.
+					_ = err
+				}
+			case oldStatus == api.StatusInProgress:
+				if active, err := d.Timer.Active(ctx); err == nil && active != nil && active.TodoID == t.ID {
+					_, _, _ = d.Timer.Stop(ctx)
+				}
+			}
+		}
+
 		writeJSON(w, http.StatusOK, t)
 	}
 }

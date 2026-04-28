@@ -35,6 +35,11 @@ type Todo struct {
 	CreatedAt int64      `json:"createdAt"`
 	UpdatedAt int64      `json:"updatedAt"`
 	DoneAt    *int64     `json:"doneAt,omitempty"`
+	// SortOrder is the manual within-column position on the kanban board.
+	// Higher values render higher. The UI computes new orders as the average
+	// of neighbors when a card is dropped between two existing cards, which
+	// avoids touching unrelated rows on every reorder.
+	SortOrder float64 `json:"sortOrder"`
 }
 
 // Tag is a label that can be attached to multiple todos.
@@ -66,12 +71,13 @@ type CreateTodoRequest struct {
 
 // UpdateTodoRequest is the body of PATCH /api/todos/{id}; nil pointers mean "leave unchanged".
 type UpdateTodoRequest struct {
-	Title    *string     `json:"title,omitempty"`
-	Notes    *string     `json:"notes,omitempty"`
-	Priority *Priority   `json:"priority,omitempty"`
-	Status   *TodoStatus `json:"status,omitempty"`
-	DueAt    *int64      `json:"dueAt,omitempty"`
-	Tags     *[]string   `json:"tags,omitempty"`
+	Title     *string     `json:"title,omitempty"`
+	Notes     *string     `json:"notes,omitempty"`
+	Priority  *Priority   `json:"priority,omitempty"`
+	Status    *TodoStatus `json:"status,omitempty"`
+	DueAt     *int64      `json:"dueAt,omitempty"`
+	Tags      *[]string   `json:"tags,omitempty"`
+	SortOrder *float64    `json:"sortOrder,omitempty"`
 }
 
 // ErrorResponse wraps an ErrorBody for parse-friendly client error reporting.

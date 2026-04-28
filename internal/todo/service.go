@@ -138,6 +138,10 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 			t.DueAt = req.DueAt
 			changed = append(changed, "dueAt")
 		}
+		if req.SortOrder != nil && t.SortOrder != *req.SortOrder {
+			t.SortOrder = *req.SortOrder
+			changed = append(changed, "sortOrder")
+		}
 		t.UpdatedAt = now
 		return nil
 	})

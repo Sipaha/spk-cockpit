@@ -14,6 +14,7 @@ export interface Todo {
   createdAt: number;
   updatedAt: number;
   doneAt?: number;
+  sortOrder: number;
 }
 
 export interface Tag {
@@ -37,6 +38,7 @@ export interface UpdateTodoRequest {
   status?: TodoStatus;
   dueAt?: number;
   tags?: string[];
+  sortOrder?: number;
 }
 
 export interface ApiEvent<T = unknown> {
