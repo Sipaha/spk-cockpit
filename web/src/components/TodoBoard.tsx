@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Tag as TagIcon } from "lucide-react";
+import { Plus, Tag as TagIcon, Trash2 as Trash2Icon } from "lucide-react";
 
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
@@ -25,6 +25,7 @@ import { TodoRow } from "./TodoRow";
 import { TodoEditorModal } from "./TodoEditorModal";
 import { TodoViewModal } from "./TodoViewModal";
 import { TagsManager } from "./TagsManager";
+import { TrashList } from "./TrashList";
 import { UndoToast } from "./UndoToast";
 import type { Todo, TodoStatus } from "../lib/types";
 
@@ -96,6 +97,7 @@ export function TodoBoard() {
 
   const [modal, setModal] = useState<ModalState>(null);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
+  const [trashModalOpen, setTrashModalOpen] = useState(false);
   const [undo, setUndo] = useState<Todo | null>(null);
   // Reading s.tags directly keeps the selector referentially stable; mapping
   // to names runs in a memo so we don't trigger Zustand's "snapshot changed
@@ -255,10 +257,11 @@ export function TodoBoard() {
             <TagIcon size={14} /> Tags
           </button>
           <button
-            onClick={() => setModal({ mode: "new" })}
-            className="flex items-center gap-1 px-3 py-1.5 bg-accent text-bg rounded text-sm hover:opacity-90"
+            onClick={() => setTrashModalOpen(true)}
+            title="Open trashcan"
+            className="flex items-center gap-1 px-3 py-1.5 text-fgmute hover:text-fg rounded text-sm border border-bgmute hover:border-fgmute"
           >
-            <Plus size={14} /> Add
+            <Trash2Icon size={14} /> Trashcan
           </button>
         </div>
       </div>
@@ -277,6 +280,16 @@ export function TodoBoard() {
               id={col.id}
               label={col.label}
               items={view[col.id]}
+              footer={
+                col.id === "open" ? (
+                  <button
+                    onClick={() => setModal({ mode: "new" })}
+                    className="flex items-center justify-center gap-1 w-full py-2 text-fgmute hover:text-fg hover:bg-bg rounded text-sm border border-dashed border-bgmute hover:border-fgmute"
+                  >
+                    <Plus size={14} /> Add todo
+                  </button>
+                ) : undefined
+              }
               renderCard={(t) => (
                 <SortableCard key={t.id} todo={t}>
                   <TodoRow {...cardProps(t)} />
@@ -337,6 +350,25 @@ export function TodoBoard() {
           </div>
         </div>
       )}
+      {trashModalOpen && (
+        <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6">
+          <div className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-fgmute text-xs uppercase tracking-wide">Trashcan</div>
+              <button
+                onClick={() => setTrashModalOpen(false)}
+                className="text-fgmute hover:text-fg text-sm"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-fgmute text-sm">
+              Recently deleted todos. Click Restore to bring one back to the board.
+            </p>
+            <TrashList />
+          </div>
+        </div>
+      )}
       {undo && (
         <UndoToast
           message={`Deleted "${firstLine(undo.title, 60)}"`}
@@ -360,9 +392,12 @@ interface ColumnProps {
   label: string;
   items: Todo[];
   renderCard: (t: Todo) => React.ReactNode;
+  // Optional bottom slot — used by the To Do column to host the
+  // "+ Add todo" button without spilling it into the global header.
+  footer?: React.ReactNode;
 }
 
-function Column({ id, label, items, renderCard }: ColumnProps) {
+function Column({ id, label, items, renderCard, footer }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
     <div
@@ -383,11 +418,12 @@ function Column({ id, label, items, renderCard }: ColumnProps) {
           {items.map((t) => renderCard(t))}
         </div>
       </SortableContext>
-      {items.length === 0 && (
+      {items.length === 0 && !footer && (
         <div className="text-fgmute text-xs text-center py-6 border border-dashed border-bgmute rounded">
           drop here
         </div>
       )}
+      {footer && <div className="mt-1">{footer}</div>}
     </div>
   );
 }

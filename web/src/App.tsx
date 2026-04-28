@@ -46,7 +46,6 @@ function MainShell() {
           {navItem("/", "Todos")}
           {navItem("/calendar", "Calendar")}
           {navItem("/standup", "Standup")}
-          {navItem("/trash", "Trash")}
           {navItem("/settings", "Settings")}
         </nav>
       </aside>
