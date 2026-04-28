@@ -84,6 +84,41 @@ func (r *TimerRepo) Active(ctx context.Context) (*api.TimerSession, error) {
 	return &s, nil
 }
 
+// ListActive returns every running session.
+func (r *TimerRepo) ListActive(ctx context.Context) ([]api.TimerSession, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, todo_id, started_at, ended_at, source
+		 FROM timer_sessions WHERE ended_at IS NULL ORDER BY started_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query active timer_sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []api.TimerSession
+	for rows.Next() {
+		s, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// ActiveByTodo returns the active session for todoID or (nil, nil).
+func (r *TimerRepo) ActiveByTodo(ctx context.Context, todoID string) (*api.TimerSession, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT id, todo_id, started_at, ended_at, source
+		 FROM timer_sessions WHERE todo_id = ? AND ended_at IS NULL`, todoID)
+	s, err := scanSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // ListByTodo returns sessions newest first.
 func (r *TimerRepo) ListByTodo(ctx context.Context, todoID string, limit int) ([]api.TimerSession, error) {
 	q := `SELECT id, todo_id, started_at, ended_at, source

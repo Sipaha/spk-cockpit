@@ -119,6 +119,11 @@ type StartTimerRequest struct {
 	TodoID string `json:"todoId"`
 }
 
+// StopTimerRequest is the body of POST /api/timer/stop.
+type StopTimerRequest struct {
+	TodoID string `json:"todoId"`
+}
+
 // MeetingSource indicates where a meeting came from.
 type MeetingSource string
 

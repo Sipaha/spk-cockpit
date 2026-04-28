@@ -11,7 +11,7 @@ const stream = new EventStream();
 export function Popover() {
   const {
     todos,
-    activeTimer,
+    activeTimers,
     load,
     loadActiveTimer,
     applyEvent,
@@ -30,25 +30,34 @@ export function Popover() {
 
   const open = todos.filter((t) => t.status !== "done" && t.status !== "cancelled");
   const top = open.slice(0, 5);
-  const activeTodo = activeTimer ? todos.find((t) => t.id === activeTimer.todoId) : null;
+  const primaryActive = activeTimers.length > 0
+    ? activeTimers.reduce((a, b) => (a.startedAt < b.startedAt ? a : b))
+    : null;
+  const activeTodo = primaryActive ? todos.find((t) => t.id === primaryActive.todoId) : null;
 
   async function startOn(t: Todo) {
     await api.startTimer(t.id);
   }
   async function stopActive() {
-    await api.stopTimer();
+    if (!primaryActive) return;
+    await api.stopTimer(primaryActive.todoId);
+  }
+  function isRunning(todoId: string): boolean {
+    return activeTimers.some((s) => s.todoId === todoId);
   }
 
   return (
     <div className="bg-bg text-fg p-3 flex flex-col gap-3 max-w-sm">
-      {activeTimer && (
+      {primaryActive && (
         <div className="flex items-center justify-between bg-bgsub rounded p-2">
           <div className="flex flex-col">
-            <span className="text-xs text-fgmute">Active timer</span>
+            <span className="text-xs text-fgmute">
+              Active timer{activeTimers.length > 1 ? ` (+${activeTimers.length - 1})` : ""}
+            </span>
             <span className="text-sm">{activeTodo ? activeTodo.title : "(unknown todo)"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <TimerBadge startedAt={activeTimer.startedAt} />
+            <TimerBadge startedAt={primaryActive.startedAt} />
             <button onClick={stopActive} className="text-urgent hover:text-fg text-sm">
               stop
             </button>
@@ -69,10 +78,10 @@ export function Popover() {
             key={t.id}
             onClick={() => startOn(t)}
             className="flex items-center justify-between text-left p-2 rounded hover:bg-bgsub"
-            disabled={!!activeTimer && activeTimer.todoId === t.id}
+            disabled={isRunning(t.id)}
           >
             <span className="truncate">{t.title}</span>
-            {!!activeTimer && activeTimer.todoId === t.id ? (
+            {isRunning(t.id) ? (
               <span className="text-accent text-xs">running</span>
             ) : (
               <span className="text-fgmute text-xs">&#9654; start</span>

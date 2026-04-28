@@ -240,12 +240,13 @@ func TestServer_TimerStartActiveStop(t *testing.T) {
 	resp3, err := c.Get("http://unix/api/timer/active")
 	require.NoError(t, err)
 	defer func() { _ = resp3.Body.Close() }()
-	var active *api.TimerSession
+	var active []api.TimerSession
 	require.NoError(t, json.NewDecoder(resp3.Body).Decode(&active))
-	require.NotNil(t, active)
-	require.Equal(t, td.ID, active.TodoID)
+	require.Len(t, active, 1)
+	require.Equal(t, td.ID, active[0].TodoID)
 
-	resp4, err := c.Post("http://unix/api/timer/stop", "application/json", nil)
+	stopBody, _ := json.Marshal(api.StopTimerRequest{TodoID: td.ID})
+	resp4, err := c.Post("http://unix/api/timer/stop", "application/json", bytes.NewReader(stopBody))
 	require.NoError(t, err)
 	defer func() { _ = resp4.Body.Close() }()
 	require.Equal(t, 200, resp4.StatusCode)
@@ -253,7 +254,7 @@ func TestServer_TimerStartActiveStop(t *testing.T) {
 	resp5, err := c.Get("http://unix/api/timer/active")
 	require.NoError(t, err)
 	defer func() { _ = resp5.Body.Close() }()
-	var afterStop *api.TimerSession
+	var afterStop []api.TimerSession
 	require.NoError(t, json.NewDecoder(resp5.Body).Decode(&afterStop))
-	require.Nil(t, afterStop)
+	require.Empty(t, afterStop)
 }

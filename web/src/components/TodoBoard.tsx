@@ -57,7 +57,7 @@ export function TodoBoard() {
     error,
     load,
     setIncludeDone,
-    activeTimer,
+    activeTimers,
     loadActiveTimer,
     loadTags,
   } = useTodoStore();
@@ -175,8 +175,8 @@ export function TodoBoard() {
       // ignore — restore failure leaves the toast dismissed; user can find it in Trash
     }
   }
-  async function stopTimer() {
-    await api.stopTimer();
+  async function stopTimer(t: Todo) {
+    await api.stopTimer(t.id);
   }
   function openEdit(todo: Todo) {
     setModal({ mode: "edit", todo });
@@ -201,14 +201,16 @@ export function TodoBoard() {
     await api.updateTodo(id, { title, notes });
   }
 
-  const cardProps = (t: Todo) => ({
-    todo: t,
-    activeTimerStartedAt:
-      activeTimer && activeTimer.todoId === t.id ? activeTimer.startedAt : null,
-    onDelete: remove,
-    onStopTimer: stopTimer,
-    onEdit: openEdit,
-  });
+  const cardProps = (t: Todo) => {
+    const session = activeTimers.find((s) => s.todoId === t.id);
+    return {
+      todo: t,
+      activeTimerStartedAt: session ? session.startedAt : null,
+      onDelete: remove,
+      onStopTimer: stopTimer,
+      onEdit: openEdit,
+    };
+  };
 
   return (
     <div className="flex flex-col gap-3">

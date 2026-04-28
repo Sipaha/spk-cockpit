@@ -7,7 +7,7 @@ interface AppState {
   loading: boolean;
   includeDone: boolean;
   error: string | null;
-  activeTimer: TimerSession | null;
+  activeTimers: TimerSession[];
 
   meetings: Meeting[];
   meetingsLoading: boolean;
@@ -30,7 +30,7 @@ export const useTodoStore = create<AppState>((set, get) => ({
   loading: false,
   includeDone: false,
   error: null,
-  activeTimer: null,
+  activeTimers: [],
   meetings: [],
   meetingsLoading: false,
   syncStates: [],
@@ -51,10 +51,10 @@ export const useTodoStore = create<AppState>((set, get) => ({
   },
   async loadActiveTimer() {
     try {
-      const t = await api.activeTimer();
-      set({ activeTimer: t });
+      const list = await api.activeTimers();
+      set({ activeTimers: list ?? [] });
     } catch {
-      set({ activeTimer: null });
+      set({ activeTimers: [] });
     }
   },
   async loadMeetings(fromUnix, toUnix) {
@@ -95,11 +95,16 @@ export const useTodoStore = create<AppState>((set, get) => ({
       set({ todos: get().todos.filter((t) => t.id !== todoId) });
     } else if (e.type === "timer.started") {
       const d = e.data as { todoId: string; sessionId: number; startedAt: number };
+      const others = get().activeTimers.filter((t) => t.todoId !== d.todoId);
       set({
-        activeTimer: { id: d.sessionId, todoId: d.todoId, startedAt: d.startedAt, source: "manual" },
+        activeTimers: [
+          ...others,
+          { id: d.sessionId, todoId: d.todoId, startedAt: d.startedAt, source: "manual" },
+        ],
       });
     } else if (e.type === "timer.stopped") {
-      set({ activeTimer: null });
+      const d = e.data as { todoId: string };
+      set({ activeTimers: get().activeTimers.filter((t) => t.todoId !== d.todoId) });
     } else if (e.type === "meeting.upserted") {
       const { meeting } = e.data as { meeting: Meeting };
       const others = get().meetings.filter((m) => m.id !== meeting.id);

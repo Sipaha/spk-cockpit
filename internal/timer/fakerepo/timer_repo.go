@@ -55,12 +55,39 @@ func (r *Timer) Stop(_ context.Context, todoID string, endedAt int64) (api.Timer
 	return api.TimerSession{}, timer.ErrNoActiveSession
 }
 
-// Active returns the single active session (one expected by domain invariant).
+// Active returns one active session if any.
 func (r *Timer) Active(_ context.Context) (*api.TimerSession, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, s := range r.rows {
 		if s.EndedAt == nil {
+			s := s
+			return &s, nil
+		}
+	}
+	return nil, nil
+}
+
+// ListActive returns every running session.
+func (r *Timer) ListActive(_ context.Context) ([]api.TimerSession, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []api.TimerSession
+	for _, s := range r.rows {
+		if s.EndedAt == nil {
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt < out[j].StartedAt })
+	return out, nil
+}
+
+// ActiveByTodo returns the active session for todoID, or (nil, nil).
+func (r *Timer) ActiveByTodo(_ context.Context, todoID string) (*api.TimerSession, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, s := range r.rows {
+		if s.TodoID == todoID && s.EndedAt == nil {
 			s := s
 			return &s, nil
 		}

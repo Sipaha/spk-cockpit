@@ -45,10 +45,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ todoId }),
     }),
-  stopTimer: () =>
-    request<TimerSession>("/api/timer/stop", { method: "POST" }),
-  activeTimer: () =>
-    request<TimerSession | null>("/api/timer/active"),
+  stopTimer: (todoId: string) =>
+    request<TimerSession>("/api/timer/stop", {
+      method: "POST",
+      body: JSON.stringify({ todoId }),
+    }),
+  stopAllTimers: () =>
+    request<TimerSession[]>("/api/timer/stop", { method: "POST", body: "{}" }),
+  activeTimers: () => request<TimerSession[]>("/api/timer/active"),
   todoTime: (id: string, sinceUnix = 0) =>
     request<TodoTimeTotal>(`/api/todos/${id}/time?since=${sinceUnix}`),
   listTags: () => request<Tag[]>("/api/tags"),

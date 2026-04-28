@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spk/spk-cockpit/internal/api"
+	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 )
 
@@ -115,21 +116,18 @@ func handleUpdateTodo(d *Deps) http.HandlerFunc {
 			return
 		}
 
-		// Auto-timer: dragging a card into "In Progress" should start tracking
-		// time on it; pulling it out should stop. We only stop when the active
-		// session belongs to *this* todo so a manually-running timer for some
-		// other task isn't yanked when the user moves an unrelated card.
+		// Auto-timer: dragging a card into "In Progress" starts a timer on it;
+		// pulling it out stops only that todo's session. Sibling timers on
+		// other in-progress cards are not touched, so parallel work-in-flight
+		// stays running.
 		if d.Timer != nil && req.Status != nil && oldStatus != t.Status {
 			ctx := r.Context()
 			switch {
 			case t.Status == api.StatusInProgress:
-				if _, err := d.Timer.Start(ctx, t.ID); err != nil {
-					// Logged at the layer above; don't fail the PATCH for it.
-					_ = err
-				}
+				_, _ = d.Timer.Start(ctx, t.ID)
 			case oldStatus == api.StatusInProgress:
-				if active, err := d.Timer.Active(ctx); err == nil && active != nil && active.TodoID == t.ID {
-					_, _, _ = d.Timer.Stop(ctx)
+				if _, _, err := d.Timer.Stop(ctx, t.ID); err != nil && !errors.Is(err, timer.ErrNoActiveSession) {
+					_ = err
 				}
 			}
 		}

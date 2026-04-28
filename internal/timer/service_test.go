@@ -31,7 +31,7 @@ func TestService_Start_AssignsAndReturnsSession(t *testing.T) {
 	require.Nil(t, got.EndedAt)
 }
 
-func TestService_Start_StopsExistingFirst(t *testing.T) {
+func TestService_Start_AllowsParallelTimers(t *testing.T) {
 	t0 := time.Date(2026, 4, 27, 10, 0, 0, 0, time.UTC)
 	s, r := newTimerSvc(t, t0)
 	ctx := context.Background()
@@ -45,17 +45,12 @@ func TestService_Start_StopsExistingFirst(t *testing.T) {
 	second, err := s.Start(ctx, "todo-B")
 	require.NoError(t, err)
 	require.Equal(t, "todo-B", second.TodoID)
+	require.NotEqual(t, first.ID, second.ID)
 
-	sessions, err := r.ListByTodo(ctx, "todo-A", 10)
+	// Both sessions should be running concurrently — Start no longer auto-stops siblings.
+	active, err := r.ListActive(ctx)
 	require.NoError(t, err)
-	require.Len(t, sessions, 1)
-	require.NotNil(t, sessions[0].EndedAt)
-	require.Equal(t, first.ID, sessions[0].ID)
-
-	active, err := r.Active(ctx)
-	require.NoError(t, err)
-	require.NotNil(t, active)
-	require.Equal(t, "todo-B", active.TodoID)
+	require.Len(t, active, 2)
 }
 
 func TestService_Stop_ReturnsClosedSessionAndDuration(t *testing.T) {
@@ -69,7 +64,7 @@ func TestService_Stop_ReturnsClosedSessionAndDuration(t *testing.T) {
 	c := s.Clock().(*clock.Fake)
 	c.Advance(90 * time.Second)
 
-	stopped, dur, err := s.Stop(ctx)
+	stopped, dur, err := s.Stop(ctx, "todo-1")
 	require.NoError(t, err)
 	require.NotNil(t, stopped.EndedAt)
 	require.Equal(t, int64(90), dur)
@@ -78,15 +73,15 @@ func TestService_Stop_ReturnsClosedSessionAndDuration(t *testing.T) {
 
 func TestService_Stop_NoActiveReturnsErrNoActive(t *testing.T) {
 	s, _ := newTimerSvc(t, time.Now())
-	_, _, err := s.Stop(context.Background())
+	_, _, err := s.Stop(context.Background(), "todo-1")
 	require.ErrorIs(t, err, timer.ErrNoActiveSession)
 }
 
-func TestService_Active_NilWhenNothingRunning(t *testing.T) {
+func TestService_Active_EmptyWhenNothingRunning(t *testing.T) {
 	s, _ := newTimerSvc(t, time.Now())
 	got, err := s.Active(context.Background())
 	require.NoError(t, err)
-	require.Nil(t, got)
+	require.Empty(t, got)
 }
 
 func TestService_TotalForTodo_AggregatesCompleted(t *testing.T) {
@@ -97,12 +92,12 @@ func TestService_TotalForTodo_AggregatesCompleted(t *testing.T) {
 
 	_, _ = s.Start(ctx, "todo-1")
 	c.Advance(60 * time.Second)
-	_, _, _ = s.Stop(ctx)
+	_, _, _ = s.Stop(ctx, "todo-1")
 
 	c.Advance(10 * time.Second)
 	_, _ = s.Start(ctx, "todo-1")
 	c.Advance(30 * time.Second)
-	_, _, _ = s.Stop(ctx)
+	_, _, _ = s.Stop(ctx, "todo-1")
 
 	total, err := s.TotalForTodo(ctx, "todo-1", 0)
 	require.NoError(t, err)

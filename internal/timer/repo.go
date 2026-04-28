@@ -32,9 +32,17 @@ type TimerRepo interface {
 	// If no active session exists, ErrNoActiveSession.
 	Stop(ctx context.Context, todoID string, endedAt int64) (api.TimerSession, error)
 
-	// Active returns the currently-active session across all todos (one expected),
-	// or (nil, nil) if no timer is active.
+	// Active returns one currently-active session if any exists. Kept for
+	// callers that just need to know "is something running"; with parallel
+	// timers, ListActive is the more honest API.
 	Active(ctx context.Context) (*api.TimerSession, error)
+
+	// ListActive returns every currently-running session. Order is undefined.
+	ListActive(ctx context.Context) ([]api.TimerSession, error)
+
+	// ActiveByTodo returns the active session belonging to todoID, or
+	// (nil, nil) if that todo has no running timer.
+	ActiveByTodo(ctx context.Context, todoID string) (*api.TimerSession, error)
 
 	// ListByTodo returns all sessions for a todo, newest first.
 	ListByTodo(ctx context.Context, todoID string, limit int) ([]api.TimerSession, error)

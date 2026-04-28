@@ -34,14 +34,15 @@ type Subscriber struct {
 	mu    sync.Mutex
 	state State
 
-	timerStartedAt int64
-	timerTodoID    string
+	// active holds every running timer keyed by todoID, so handleEvent stays
+	// O(1) per started/stopped event without re-querying the timer repo.
+	active map[string]int64 // todoID → startedAt
 }
 
 // NewSubscriber wires the bus, tray, todo lister, and meeting fetcher.
 // mtgFetch and todos may be nil; the corresponding info disappears.
 func NewSubscriber(bus EventSource, t Backend, todos TodoLister, mtgFetch func() *api.Meeting) *Subscriber {
-	return &Subscriber{bus: bus, tray: t, todos: todos, mtgFetch: mtgFetch}
+	return &Subscriber{bus: bus, tray: t, todos: todos, mtgFetch: mtgFetch, active: map[string]int64{}}
 }
 
 // Run subscribes and pushes State updates until ctx is done.
@@ -75,18 +76,17 @@ func (s *Subscriber) handleEvent(ctx context.Context, e api.Event) {
 	case api.EventTimerStarted:
 		if d, ok := e.Data.(api.TimerStartedData); ok {
 			s.mu.Lock()
-			s.timerStartedAt = d.StartedAt
-			s.timerTodoID = d.TodoID
+			s.active[d.TodoID] = d.StartedAt
 			s.mu.Unlock()
 			s.refreshTimerLabel(ctx)
 		}
 	case api.EventTimerStopped:
-		s.mu.Lock()
-		s.timerStartedAt = 0
-		s.timerTodoID = ""
-		s.state.TimerActive = false
-		s.state.TimerLabel = ""
-		s.mu.Unlock()
+		if d, ok := e.Data.(api.TimerStoppedData); ok {
+			s.mu.Lock()
+			delete(s.active, d.TodoID)
+			s.mu.Unlock()
+		}
+		s.refreshTimerLabel(ctx)
 	case api.EventMeetingUpserted, api.EventMeetingDeleted, api.EventMeetingNotificationFired:
 		s.refreshMeeting()
 	case api.EventTodoCreated, api.EventTodoUpdated, api.EventTodoStatusChanged, api.EventTodoDeleted:
@@ -164,26 +164,39 @@ func (s *Subscriber) refreshOverdue(ctx context.Context) {
 
 func (s *Subscriber) refreshTimerLabel(ctx context.Context) {
 	s.mu.Lock()
-	startedAt := s.timerStartedAt
-	todoID := s.timerTodoID
-	s.mu.Unlock()
-	if startedAt == 0 || todoID == "" {
-		s.mu.Lock()
+	if len(s.active) == 0 {
 		s.state.TimerActive = false
 		s.state.TimerLabel = ""
 		s.mu.Unlock()
 		return
 	}
-	title := shortTodoID(todoID)
+	// Pick the oldest (lowest startedAt) as the headline timer; that's the
+	// session that's been burning the longest and is most likely to want a
+	// glance from the user.
+	var primary string
+	var primaryStart int64
+	for id, started := range s.active {
+		if primary == "" || started < primaryStart {
+			primary, primaryStart = id, started
+		}
+	}
+	count := len(s.active)
+	s.mu.Unlock()
+
+	title := shortTodoID(primary)
 	if s.todos != nil {
-		if t, err := s.todos.Get(ctx, todoID); err == nil && t.Title != "" {
+		if t, err := s.todos.Get(ctx, primary); err == nil && t.Title != "" {
 			title = t.Title
 		}
 	}
-	elapsed := time.Since(time.Unix(startedAt, 0)).Round(time.Second)
+	elapsed := time.Since(time.Unix(primaryStart, 0)).Round(time.Second)
+	label := fmt.Sprintf("%s on %s", elapsed, title)
+	if count > 1 {
+		label = fmt.Sprintf("%s (+%d)", label, count-1)
+	}
 	s.mu.Lock()
 	s.state.TimerActive = true
-	s.state.TimerLabel = fmt.Sprintf("%s on %s", elapsed, title)
+	s.state.TimerLabel = label
 	s.mu.Unlock()
 }
 

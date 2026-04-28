@@ -259,8 +259,16 @@ func runStart(ctx context.Context) error {
 			}
 		},
 		StopTimer: func() {
-			if _, _, err := timerSvc.Stop(context.Background()); err != nil {
-				logger.Warn("tray: stop timer failed", "err", err)
+			ctx := context.Background()
+			active, err := timerSvc.Active(ctx)
+			if err != nil {
+				logger.Warn("tray: list active failed", "err", err)
+				return
+			}
+			for _, a := range active {
+				if _, _, err := timerSvc.Stop(ctx, a.TodoID); err != nil {
+					logger.Warn("tray: stop timer failed", "todo", a.TodoID, "err", err)
+				}
 			}
 		},
 		QuickAddTodo: func() {

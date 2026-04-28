@@ -35,23 +35,16 @@ func (s *Service) publish(t string, data any) {
 	s.bus.Publish(api.Event{Type: t, Data: data})
 }
 
-// Start begins tracking time on todoID. If a different timer is already running,
-// it is stopped first (one-active-globally rule). If the same todo is already
-// running, the existing session is returned unchanged (no-op).
+// Start begins tracking time on todoID. Multiple todos may have active timers
+// concurrently — the partial unique index (todo_id WHERE ended_at IS NULL)
+// only forbids duplicates on the same todo, so calling Start with a todoID
+// that already has an active session is idempotent (returns the existing one).
 func (s *Service) Start(ctx context.Context, todoID string) (api.TimerSession, error) {
-	cur, err := s.repo.Active(ctx)
-	if err != nil {
+	if cur, err := s.repo.ActiveByTodo(ctx, todoID); err != nil {
 		return api.TimerSession{}, fmt.Errorf("active: %w", err)
+	} else if cur != nil {
+		return *cur, nil
 	}
-	if cur != nil {
-		if cur.TodoID == todoID {
-			return *cur, nil
-		}
-		if _, _, err := s.stopActive(ctx, *cur); err != nil {
-			return api.TimerSession{}, err
-		}
-	}
-
 	now := s.clock.Now().Unix()
 	id, err := s.repo.Start(ctx, todoID, now, "manual")
 	if err != nil {
@@ -64,10 +57,10 @@ func (s *Service) Start(ctx context.Context, todoID string) (api.TimerSession, e
 	return session, nil
 }
 
-// Stop ends the currently-active session, returning it and its duration in seconds.
-// Returns ErrNoActiveSession if no timer is running.
-func (s *Service) Stop(ctx context.Context) (api.TimerSession, int64, error) {
-	cur, err := s.repo.Active(ctx)
+// Stop ends the active session for todoID. Returns ErrNoActiveSession if that
+// todo has no running timer. Other todos' timers are left alone.
+func (s *Service) Stop(ctx context.Context, todoID string) (api.TimerSession, int64, error) {
+	cur, err := s.repo.ActiveByTodo(ctx, todoID)
 	if err != nil {
 		return api.TimerSession{}, 0, fmt.Errorf("active: %w", err)
 	}
@@ -91,29 +84,35 @@ func (s *Service) stopActive(ctx context.Context, cur api.TimerSession) (api.Tim
 	return stopped, dur, nil
 }
 
-// Active returns the currently-running session, or nil if no timer is active.
-func (s *Service) Active(ctx context.Context) (*api.TimerSession, error) {
-	return s.repo.Active(ctx)
+// Active returns every currently-running session.
+func (s *Service) Active(ctx context.Context) ([]api.TimerSession, error) {
+	list, err := s.repo.ListActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = []api.TimerSession{}
+	}
+	return list, nil
 }
 
 // TotalForTodo aggregates completed sessions for todoID since sinceUnix and
-// reports whether an active session is on that todo.
+// reports whether that specific todo has an active session.
 func (s *Service) TotalForTodo(ctx context.Context, todoID string, sinceUnix int64) (api.TodoTimeTotal, error) {
 	total, cnt, err := s.repo.TotalForTodo(ctx, todoID, sinceUnix)
 	if err != nil {
 		return api.TodoTimeTotal{}, err
 	}
-	active, err := s.repo.Active(ctx)
+	active, err := s.repo.ActiveByTodo(ctx, todoID)
 	if err != nil {
 		return api.TodoTimeTotal{}, err
 	}
-	hasActive := active != nil && active.TodoID == todoID
 	return api.TodoTimeTotal{
 		TodoID:     todoID,
 		SinceUnix:  sinceUnix,
 		TotalSec:   total,
 		SessionCnt: cnt,
-		HasActive:  hasActive,
+		HasActive:  active != nil,
 	}, nil
 }
 
