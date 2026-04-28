@@ -47,9 +47,9 @@ export function QuickAddTodo() {
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // Plain Enter saves; Shift/Ctrl/Cmd+Enter inserts a newline (default
-    // textarea behavior). Esc dismisses the window without saving.
-    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    // Same shortcut shape as the in-board editor modal: Ctrl/Cmd+Enter
+    // commits, plain Enter inserts a newline, Esc dismisses.
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       void save();
       return;
@@ -63,7 +63,7 @@ export function QuickAddTodo() {
   return (
     <div className="bg-bg text-fg min-h-screen flex flex-col p-4 gap-3">
       <div className="text-fgmute text-xs">
-        New todo · Enter to save · Ctrl+Enter for newline · Esc to close
+        New todo · Ctrl+Enter to save · Esc to close
       </div>
       <textarea
         ref={ref}
