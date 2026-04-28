@@ -6,8 +6,8 @@ import type { MouseEvent, ReactNode } from "react";
 // URL template:
 //
 //   - pattern      — regex source. Capture groups feed the URL.
-//                    Default: \b([A-Z][A-Z0-9_]*-\d+)\b — covers things
-//                    like COREDEV-197, PROJ_2-5.
+//                    Default: \b([A-Z][A-Z0-9_]*-\d+)\b — covers
+//                    PROJ-1, ABC_2-50, etc.
 //   - urlTemplate  — string with $0, $1, $2… backrefs that resolves to a
 //                    browseable URL. $$ keeps a literal dollar.
 //
@@ -18,7 +18,7 @@ import type { MouseEvent, ReactNode } from "react";
 //      anchor pointing at the resolved tracker URL. Otherwise the URL
 //      stays as a plain external link.
 //   2. The remaining (non-URL) text gets a second pass for bare
-//      references like "fix COREDEV-197 by Friday".
+//      references like "fix PROJ-123 by Friday".
 //
 // Anchor click handlers stop propagation so opening a task from inside a
 // clickable card body doesn't also fire the card's edit handler.

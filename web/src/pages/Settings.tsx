@@ -226,14 +226,9 @@ export function Settings() {
           </button>
         </div>
         <p className="text-fgmute text-xs leading-relaxed">
-          Examples — Jira:{" "}
-          <code>https://jira.example.com/browse/$1</code>; Citeck (single
-          workspace):{" "}
-          <code>
-            https://citeck.ecos24.ru/v2/dashboard?ws=COREDEV&recordRef=emodel/ept-issue@$1
-          </code>
-          ; default regex{" "}
-          <code>{DEFAULT_TASK_PATTERN}</code> covers ids like COREDEV-197 / PROJ_2-5.
+          Example — Jira-style:{" "}
+          <code>https://tracker.example.com/browse/$1</code>. Default regex{" "}
+          <code>{DEFAULT_TASK_PATTERN}</code> matches ids like PROJ-1, ABC_2-50.
         </p>
       </section>
 

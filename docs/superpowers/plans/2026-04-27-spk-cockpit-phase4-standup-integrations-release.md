@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Daily-standup aggregator that compiles "Yesterday / Today / Blockers" from closed todos + GitLab commits + Citeck Project Tracker statuses; web `/standup` route with "Copy as markdown"; CLI `cockpit standup` printing the same markdown to stdout; `cockpit install --autostart` installing a systemd-user unit; and a GitHub Actions release workflow that builds `linux/amd64`+`linux/arm64` and publishes a Release on `v*.*.*` tags.
+**Goal:** Daily-standup aggregator that compiles "Yesterday / Today / Blockers" from closed todos + GitLab commits + task tracker statuses; web `/standup` route with "Copy as markdown"; CLI `cockpit standup` printing the same markdown to stdout; `cockpit install --autostart` installing a systemd-user unit; and a GitHub Actions release workflow that builds `linux/amd64`+`linux/arm64` and publishes a Release on `v*.*.*` tags.
 
 **Architecture:** New domain `internal/standup/` aggregates from three sources via interfaces. **GitLab** and **Tracker** sources live under `internal/sync/{gitlab,tracker}/` as `Source` interfaces with HTTP impls (`net/http` + bearer token from `secret.Service`) and in-memory fakes. Standup is **on-demand** (no worker): handler `GET /api/standup?date=YYYY-MM-DD` calls `standup.Service.Generate(ctx, day)`, which fans out to the three sources in parallel and assembles `api.StandupReport`. The same path serves CLI `cockpit standup` (prints `MarkdownReport(report)`). Autostart is a Linux-only platform package writing `~/.config/systemd/user/spk-cockpit.service` and running `systemctl --user enable --now`. Release workflow uses GoReleaser-style steps (matrix build, upload to release).
 
@@ -60,7 +60,7 @@ spk-task-manager/
 │   │   │   └── fake.go                                # in-memory fake
 │   │   └── tracker/                                   # NEW
 │   │       ├── source.go                              # Source interface + TrackerItem type
-│   │       ├── http.go                                # HTTP impl (Citeck PT records query)
+│   │       ├── http.go                                # HTTP impl (the task tracker records query)
 │   │       ├── http_test.go                           # uses httptest.Server
 │   │       └── fake.go                                # in-memory fake
 │   ├── platform/
@@ -517,7 +517,7 @@ Both `TestHTTPSource_*` tests must PASS.
 - [ ] **Step 3.1: Create `internal/sync/tracker/source.go`**
 
 ```go
-// Package tracker is a read-only client for Citeck Project Tracker, used by the
+// Package tracker is a read-only client for task tracker, used by the
 // standup aggregator. No write APIs are exposed.
 package tracker
 
@@ -627,7 +627,7 @@ type Config struct {
 	Timeout  time.Duration
 }
 
-// HTTPSource calls Citeck PT records query API to fetch user-assigned items.
+// HTTPSource calls the task tracker records query API to fetch user-assigned items.
 type HTTPSource struct {
 	cfg    Config
 	client *http.Client
@@ -814,7 +814,7 @@ Both `TestHTTPSource_*` tests must PASS.
 
 ```go
 // Package standup aggregates "Yesterday / Today / Blockers" from closed todos,
-// GitLab commits, and Citeck Project Tracker activity.
+// GitLab commits, and task tracker activity.
 package standup
 
 import (
@@ -2416,7 +2416,7 @@ Add a new "Phase 4" section between the current "Phase 3" and "Architecture" sec
 - `cockpit standup` — prints today's standup as markdown (yesterday / today / blockers).
 - Web `/standup` route with "Copy as markdown" button.
 - Read-only GitLab integration: configure `gitlab.url` + `gitlab.author_username` in KV and store `gitlab_token` as a secret.
-- Read-only Citeck Project Tracker integration: configure `tracker.url` + `tracker.username` and store `tracker_token` as a secret.
+- Read-only task tracker integration: configure `tracker.url` + `tracker.username` and store `tracker_token` as a secret.
 - `cockpit install --autostart` installs `~/.config/systemd/user/spk-cockpit.service` and enables it. Use `--uninstall` to remove.
 - GitHub Actions release workflow on `v*.*.*` tags builds and publishes `linux/amd64` (and best-effort `linux/arm64`) binaries.
 

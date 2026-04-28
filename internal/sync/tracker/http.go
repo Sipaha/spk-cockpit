@@ -19,7 +19,7 @@ type Config struct {
 	Timeout  time.Duration
 }
 
-// HTTPSource calls Citeck PT records query API to fetch user-assigned items.
+// HTTPSource calls a tracker's records query API to fetch user-assigned items.
 //
 //nolint:revive // HTTPSource is not a stutter; "HTTP" is a qualifier, not the package name.
 type HTTPSource struct {

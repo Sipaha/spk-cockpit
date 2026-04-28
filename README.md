@@ -10,7 +10,7 @@ Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 - **Time tracking** — start/stop a timer on any todo. Only one runs at a time; daily totals are aggregated automatically.
 - **Calendar** — read-only sync from any CalDAV server (Yandex, Fastmail, iCloud, Nextcloud, Posteo, mailbox.org, …). DBus desktop notifications fire N minutes before each meeting (default 5; per-meeting override) and a separate small popup window opens 1 minute before.
 - **Markdown notes** attached to meetings or todos, with revision history.
-- **Daily standup helper** — auto-aggregates "Yesterday / Today / Blockers" from completed todos, your GitLab commits, and your Citeck Project Tracker activity. One-click copy as markdown.
+- **Daily standup helper** — auto-aggregates "Yesterday / Today / Blockers" from completed todos, your GitLab commits, and any HTTP-queryable task tracker (configurable URL + token). One-click copy as markdown.
 - **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open standup, stop timer, refresh sync).
 - **Encrypted secrets** — AES-256-GCM with the master key sourced from the OS keyring (libsecret on Linux).
 - **Single static binary** — Go server + embedded React/Vite/Tailwind UI, served over a Unix domain socket. No Docker, no daemon manager other than systemd-user.
@@ -86,7 +86,7 @@ curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
 curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
      -d '{"value": "alice"}' http://unix/api/kv/gitlab.author_username
 
-# Citeck Project Tracker — same pattern with tracker.url, tracker.username, tracker_token.
+# Task tracker — same pattern with tracker.url, tracker.username, tracker_token.
 ```
 
 ## Filesystem layout

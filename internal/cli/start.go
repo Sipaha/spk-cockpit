@@ -407,7 +407,7 @@ func (l *lazySync) Status() []api.SyncStateEntry {
 
 var errSyncNotConfigured = fmt.Errorf("sync not configured: missing caldav.url, caldav.username or caldav_password")
 
-// buildTrackerSource constructs a Citeck Tracker sync source from KV config and secrets.
+// buildTrackerSource constructs a tracker sync source from KV config and secrets.
 // Returns nil if any required value is missing or init fails.
 func buildTrackerSource(ctx context.Context, kv todo.KvRepo, secrets *secret.Service, logger *slog.Logger) tracker.Source {
 	url, _, _ := kv.Get(ctx, "tracker.url")

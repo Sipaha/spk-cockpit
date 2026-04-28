@@ -10,7 +10,7 @@
 
 **Out of scope for phase 1:** popover window, time-tracking, meetings, notes, CalDAV, GitLab, Tracker, notifications, secrets encryption, autostart, distribution. These belong to phases 2–4.
 
-**Reference codebase:** `/home/spk/IdeaProjects/citeck-launcher2/` — same Go-binary-with-embedded-React pattern. Read its `Makefile`, `cmd/citeck/main.go`, `internal/storage/`, `internal/daemon/`, `web/vite.config.ts` when in doubt about a specific pattern.
+**Reference codebase:** `/home/spk/IdeaProjects/reference-app/` — same Go-binary-with-embedded-React pattern. Read its `Makefile`, `cmd/main.go`, `internal/storage/`, `internal/daemon/`, `web/vite.config.ts` when in doubt about a specific pattern.
 
 ---
 
@@ -4907,7 +4907,7 @@ func udsMiddleware(socketPath string) assetserver.Middleware {
 }
 ```
 
-The middleware proxies `/api/*` over the UDS to the in-process Go server, while letting Wails serve the embedded React assets directly. Same pattern as citeck-launcher2 desktop mode.
+The middleware proxies `/api/*` over the UDS to the in-process Go server, while letting Wails serve the embedded React assets directly. Same pattern as reference-app desktop mode.
 
 - [ ] **Step 24.5: Wire window into `runStart`**
 

@@ -1,5 +1,5 @@
 // Package standup aggregates "Yesterday / Today / Blockers" from closed todos,
-// GitLab commits, and Citeck Project Tracker activity.
+// GitLab commits, and a configurable HTTP task tracker.
 package standup
 
 import (

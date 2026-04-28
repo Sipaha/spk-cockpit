@@ -16,7 +16,7 @@ Personal productivity tray-resident application that helps the user manage their
 2. **Meeting list** — read-only sync from Yandex Calendar via CalDAV; system notification N minutes before each meeting (default 5, per-meeting override).
 3. **Time-tracking on todos** — start/stop timer per todo, daily aggregation.
 4. **Meeting notes** — per-meeting markdown notes, persisted with full history.
-5. **Daily standup helper** — auto-aggregates "what I did yesterday / today" from closed todos, GitLab commits (read-only), Citeck Project Tracker statuses (read-only). One-click "copy as markdown".
+5. **Daily standup helper** — auto-aggregates "what I did yesterday / today" from closed todos, GitLab commits (read-only), task tracker statuses (read-only). One-click "copy as markdown".
 
 ### Out of scope for v1
 
@@ -60,22 +60,22 @@ Single Go binary `spk-cockpit`. The process owns:
 |---|---|
 | `internal/cli/` | Cobra commands: `start` (launch tray), `install --autostart`, `todo add/list/done`, `meeting next`, `standup`, `stop`. All commands except `start` connect to the running daemon over UDS. |
 | `internal/server/` | HTTP server on UDS, REST routes, SSE channel, recovery+logging middleware. |
-| `internal/api/` | DTOs and event types — Go-side source of truth. TypeScript counterparts maintained by hand in `web/src/lib/types.ts`, mirroring the Go shapes (same approach as citeck-launcher2). |
+| `internal/api/` | DTOs and event types — Go-side source of truth. TypeScript counterparts maintained by hand in `web/src/lib/types.ts`, mirroring the Go shapes (same approach as reference-app). |
 | `internal/store/` | SQLite wrapper, embedded migrations (`embed.FS`), repository interfaces and implementations: `TodoRepo`, `MeetingRepo`, `NoteRepo`, `TimerRepo`, `SecretRepo`, `EventRepo`, `TagRepo`, `KvRepo`, `SyncStateRepo`. |
 | `internal/todo/` | Todo domain: create/update/status transitions, priority, filtering, audit-event emission. Pure logic over `TodoRepo` + `EventRepo`. |
 | `internal/meeting/` | Meeting domain: model, notification scheduling rules (notify_min override, reset on start_at change), note attachment. |
 | `internal/timer/` | Time-tracking: start/pause/stop sessions, single-active-session invariant, daily aggregation reports. |
 | `internal/note/` | Notes attached to meetings or todos. Markdown body, version-less in v1. |
-| `internal/standup/` | Standup aggregator. Combines closed todos (own data), GitLab commits, Citeck PT statuses through source interfaces. |
+| `internal/standup/` | Standup aggregator. Combines closed todos (own data), GitLab commits, the task tracker statuses through source interfaces. |
 | `internal/sync/caldav/` | CalDAV client for Yandex (REPORT with `time-range`, parsing via `emersion/go-ical`), periodic syncer, `etag`/`ctag` delta. |
 | `internal/sync/gitlab/` | Read-only fetcher of author commits for standup window. |
-| `internal/sync/tracker/` | Read-only Citeck Project Tracker fetcher (REST to `/eapps/api/records`). |
+| `internal/sync/tracker/` | Read-only task tracker fetcher (REST to `/eapps/api/records`). |
 | `internal/notify/` | DBus-based system notifications (`godbus/dbus`), throttling, deduplication. Behind interface for future macOS/Windows. |
 | `internal/secret/` | AES-256-GCM encrypt/decrypt, master-key acquisition (OS keyring or in-memory password). CRUD over `SecretRepo`. |
 | `internal/platform/` | OS-specific implementations: `tray/linux`, `notify/linux`, `autostart/linux` (and reserved `hotkey/linux` for future Quick Launcher). |
 | `internal/window/` | Wails wrapper: window creation, popover positioning at tray icon, hide-on-blur, single-instance guard. |
 | `internal/config/` | Read/write `~/.config/spk-cockpit/config.yml` (default notify_min, autostart toggle, source enable flags). |
-| `internal/log/` | `slog` with human-readable handler (analogous to `CleanLogHandler` in citeck-launcher2), rotating file in `~/.local/state/spk-cockpit/log/`. |
+| `internal/log/` | `slog` with human-readable handler (analogous to `CleanLogHandler` in reference-app), rotating file in `~/.local/state/spk-cockpit/log/`. |
 
 **Reserved for future iterations (no v1 code):**
 
@@ -84,7 +84,7 @@ Single Go binary `spk-cockpit`. The process owns:
 | `internal/kb/` | Knowledge base domain: KB articles, wikilink parsing, graph traversal, markdown analytics. |
 | `internal/mcp/` | MCP server transport for agent-driven KB management (and other domain access). |
 
-`web/` directory mirrors citeck-launcher2: React 19 + Vite + TypeScript + Tailwind 4 + Zustand + lucide-react. Vite multi-entry: `popover.html`, `index.html`. Built into `web/dist`, embedded into the binary.
+`web/` directory mirrors reference-app: React 19 + Vite + TypeScript + Tailwind 4 + Zustand + lucide-react. Vite multi-entry: `popover.html`, `index.html`. Built into `web/dist`, embedded into the binary.
 
 ---
 
@@ -400,7 +400,7 @@ Domain logic tested without DB or network; integrations tested with real depende
 ### CI
 
 GitHub Actions:
-- `go vet`, `golangci-lint` (pinned version, as in citeck-launcher2), `go test -race`, `pnpm vitest run`, build.
+- `go vet`, `golangci-lint` (pinned version, as in reference-app), `go test -race`, `pnpm vitest run`, build.
 - Playwright job on `ubuntu-latest` with Xvfb, runs against `vite preview`-served `web/dist` (Wails not needed for web-side E2E).
 - Release workflow on `v*.*.*` tag builds `linux/amd64` and `linux/arm64`.
 
@@ -510,5 +510,5 @@ None blocking the implementation plan. Items to revisit if user pushes back:
 - **UDS** — Unix Domain Socket. Filesystem-permissioned IPC, no TCP exposure.
 - **CalDAV** — RFC 4791 calendar protocol. Yandex Calendar exposes it at `caldav.yandex.ru`.
 - **MCP** — Model Context Protocol. Used here as a future agent-facing transport into spk-cockpit.
-- **PT** — Citeck Project Tracker. The user's task tracker, queried read-only for standup aggregation.
+- **PT** — task tracker. The user's task tracker, queried read-only for standup aggregation.
 - **ctag/etag** — CalDAV change tokens at collection / resource level, used for delta sync.

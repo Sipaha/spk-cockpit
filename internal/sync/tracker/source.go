@@ -1,5 +1,7 @@
-// Package tracker is a read-only client for Citeck Project Tracker, used by the
-// standup aggregator. No write APIs are exposed.
+// Package tracker is a read-only HTTP client for an external task tracker,
+// used by the standup aggregator to pull recent activity. The base URL,
+// credentials, and query format are user-configurable via KV/secrets, so
+// any records-style API can be plugged in. No write APIs are exposed.
 package tracker
 
 import (
