@@ -28,11 +28,19 @@ const COLUMNS: { id: TodoStatus; label: string }[] = [
   { id: "done", label: "Done" },
 ];
 
+// Done column hides cards that were completed more than this many days ago,
+// so finished work doesn't pile up forever in the rightmost column.
+const DONE_VISIBLE_DAYS = 3;
+
 type Buckets = Record<TodoStatus, Todo[]>;
 
 function bucketize(todos: Todo[]): Buckets {
   const out: Buckets = { open: [], in_progress: [], done: [], cancelled: [] };
+  const cutoff = Math.floor(Date.now() / 1000) - DONE_VISIBLE_DAYS * 24 * 3600;
   for (const t of todos) {
+    if (t.status === "done") {
+      if (!t.doneAt || t.doneAt < cutoff) continue;
+    }
     if (t.status in out) out[t.status].push(t);
   }
   // The list endpoint already orders by sort_order DESC, so each bucket is
