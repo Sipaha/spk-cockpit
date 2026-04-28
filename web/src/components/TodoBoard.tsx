@@ -169,20 +169,52 @@ export function TodoBoard() {
       postList = [...target.slice(0, insertAt), moved, ...target.slice(insertAt)];
     }
 
-    // Read the moved card's neighbors in the new list and average their
-    // sortOrders so the kanban order is stable without a global rewrite.
+    // Try the cheap path first: average the moved card's neighbors in the
+    // post-drop list. If two cards in postList already share a sortOrder
+    // (legacy data, or float-precision drift after many averaging steps),
+    // we instead rewrite the whole column with widely-spaced integers so
+    // the next drop has plenty of room.
     const idx = postList.findIndex((t) => t.id === id);
     const above = postList[idx - 1];
     const below = postList[idx + 1];
+    const tooTight =
+      (above && below && Math.abs(above.sortOrder - below.sortOrder) < 1) ||
+      (above && below && above.sortOrder === below.sortOrder);
     let newSortOrder: number;
     if (above && below) {
       newSortOrder = (above.sortOrder + below.sortOrder) / 2;
     } else if (above) {
-      newSortOrder = above.sortOrder - 1;
+      newSortOrder = above.sortOrder - 1024;
     } else if (below) {
-      newSortOrder = below.sortOrder + 1;
+      newSortOrder = below.sortOrder + 1024;
     } else {
       newSortOrder = moved.sortOrder;
+    }
+
+    let updatedPostList = postList.map((t) =>
+      t.id === id
+        ? { ...t, sortOrder: newSortOrder, status: sameColumn ? t.status : toCol }
+        : t,
+    );
+
+    // Rebalance: spread the entire column linearly with a 1024 step. The
+    // step is large enough that hundreds of subsequent halvings stay above
+    // the float precision floor.
+    const rebalanced: { id: string; sortOrder: number }[] = [];
+    if (tooTight || updatedPostList.some((t, i) =>
+      i > 0 && t.sortOrder >= updatedPostList[i - 1].sortOrder,
+    )) {
+      const step = 1024;
+      const base = step * (updatedPostList.length + 1);
+      updatedPostList = updatedPostList.map((t, i) => ({
+        ...t,
+        sortOrder: base - (i + 1) * step,
+      }));
+      const movedNew = updatedPostList.find((t) => t.id === id);
+      newSortOrder = movedNew ? movedNew.sortOrder : newSortOrder;
+      for (const t of updatedPostList) {
+        if (t.id !== id) rebalanced.push({ id: t.id, sortOrder: t.sortOrder });
+      }
     }
 
     const next: Buckets = {
@@ -193,14 +225,10 @@ export function TodoBoard() {
       backlog: view.backlog,
     };
     if (sameColumn) {
-      next[fromCol] = postList.map((t) =>
-        t.id === id ? { ...t, sortOrder: newSortOrder } : t,
-      );
+      next[fromCol] = updatedPostList;
     } else {
       next[fromCol] = next[fromCol].filter((t) => t.id !== id);
-      next[toCol] = postList.map((t) =>
-        t.id === id ? { ...t, status: toCol, sortOrder: newSortOrder } : t,
-      );
+      next[toCol] = updatedPostList;
     }
     setOverride(next);
 
@@ -211,7 +239,10 @@ export function TodoBoard() {
       if (!sameColumn) patch.status = toCol;
       // dismissedAt clears server-side when the status moves out of Done
       // (see Service.Update); no client bookkeeping needed here.
-      await api.updateTodo(id, patch);
+      await Promise.all([
+        api.updateTodo(id, patch),
+        ...rebalanced.map((r) => api.updateTodo(r.id, { sortOrder: r.sortOrder })),
+      ]);
     } catch {
       setOverride(null);
     }
