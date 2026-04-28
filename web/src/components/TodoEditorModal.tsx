@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { TagInput } from "./TagInput";
 
 export interface TodoEditorModalProps {
   heading: string;
   initialText: string;
+  initialTags?: string[];
+  tagSuggestions?: string[];
   onClose: () => void;
   // First line is the title, rest is notes. The parent decides whether this
   // becomes a create or update; the modal only owns the text editing UX.
-  onSave: (title: string, notes: string) => Promise<void> | void;
+  onSave: (title: string, notes: string, tags: string[]) => Promise<void> | void;
 }
 
 function splitTitleNotes(text: string): { title: string; notes: string } {
@@ -18,10 +21,13 @@ function splitTitleNotes(text: string): { title: string; notes: string } {
 export function TodoEditorModal({
   heading,
   initialText,
+  initialTags = [],
+  tagSuggestions = [],
   onClose,
   onSave,
 }: TodoEditorModalProps) {
   const [text, setText] = useState(initialText);
+  const [tags, setTags] = useState<string[]>(initialTags);
   const [saving, setSaving] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -41,7 +47,7 @@ export function TodoEditorModal({
     if (!title) return;
     setSaving(true);
     try {
-      await onSave(title, notes);
+      await onSave(title, notes, tags);
       onClose();
     } finally {
       setSaving(false);
@@ -77,6 +83,7 @@ export function TodoEditorModal({
           placeholder="Title… (next lines become notes)"
           className="bg-bg border border-bgmute rounded p-3 text-fg font-mono text-sm h-72 focus:outline-none focus:border-accent resize-y"
         />
+        <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
         <div className="text-fgmute text-xs">
           First line is the title; rest becomes notes. Ctrl+Enter saves, Esc cancels.
         </div>

@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus } from "lucide-react";
+import { Plus, Tag as TagIcon } from "lucide-react";
 
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
@@ -23,6 +23,7 @@ import { parseQuickAdd } from "../lib/parser";
 import { Priority } from "../lib/types";
 import { TodoRow } from "./TodoRow";
 import { TodoEditorModal } from "./TodoEditorModal";
+import { TagsManager } from "./TagsManager";
 import { UndoToast } from "./UndoToast";
 import type { Todo, TodoStatus } from "../lib/types";
 
@@ -85,7 +86,9 @@ export function TodoBoard() {
   );
 
   const [modal, setModal] = useState<ModalState>(null);
+  const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [undo, setUndo] = useState<Todo | null>(null);
+  const tagNames = useTodoStore((s) => s.tags.map((t) => t.name));
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -185,20 +188,23 @@ export function TodoBoard() {
   // Save handler for the create modal: parse the first line for #tags,
   // !priority, due:… via the same quick-add parser the previous inline form
   // used. The cleaned title (without those tokens) becomes Todo.Title;
-  // remaining lines fall through unchanged as notes.
-  async function createFromModal(rawTitle: string, notes: string) {
+  // remaining lines fall through unchanged as notes. Tags entered explicitly
+  // via TagInput are merged with whatever the parser pulled out of the
+  // title, so both pathways add up.
+  async function createFromModal(rawTitle: string, notes: string, tags: string[]) {
     const parsed = parseQuickAdd(rawTitle);
+    const merged = Array.from(new Set([...parsed.tags, ...tags]));
     await api.createTodo({
       title: parsed.title || rawTitle,
       notes: notes || undefined,
       priority: parsed.priority ?? Priority.Normal,
-      tags: parsed.tags.length > 0 ? parsed.tags : undefined,
+      tags: merged.length > 0 ? merged : undefined,
       dueAt: parsed.dueAt,
     });
   }
 
-  async function saveEdit(id: string, title: string, notes: string) {
-    await api.updateTodo(id, { title, notes });
+  async function saveEdit(id: string, title: string, notes: string, tags: string[]) {
+    await api.updateTodo(id, { title, notes, tags });
   }
 
   const cardProps = (t: Todo) => {
@@ -216,12 +222,21 @@ export function TodoBoard() {
     <div className="flex flex-col gap-3">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Todos</h2>
-        <button
-          onClick={() => setModal({ mode: "new" })}
-          className="flex items-center gap-1 px-3 py-1.5 bg-accent text-bg rounded text-sm hover:opacity-90"
-        >
-          <Plus size={14} /> Add
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setTagsModalOpen(true)}
+            title="Manage tags"
+            className="flex items-center gap-1 px-3 py-1.5 text-fgmute hover:text-fg rounded text-sm border border-bgmute hover:border-fgmute"
+          >
+            <TagIcon size={14} /> Tags
+          </button>
+          <button
+            onClick={() => setModal({ mode: "new" })}
+            className="flex items-center gap-1 px-3 py-1.5 bg-accent text-bg rounded text-sm hover:opacity-90"
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
       </div>
       {loading && <div className="text-fgmute">loading…</div>}
       {error && <div className="text-urgent">error: {error}</div>}
@@ -258,6 +273,8 @@ export function TodoBoard() {
         <TodoEditorModal
           heading="New todo"
           initialText=""
+          initialTags={[]}
+          tagSuggestions={tagNames}
           onClose={() => setModal(null)}
           onSave={createFromModal}
         />
@@ -266,9 +283,33 @@ export function TodoBoard() {
         <TodoEditorModal
           heading="Edit todo"
           initialText={modal.todo.title + (modal.todo.notes ? "\n" + modal.todo.notes : "")}
+          initialTags={modal.todo.tags ?? []}
+          tagSuggestions={tagNames}
           onClose={() => setModal(null)}
-          onSave={(title, notes) => saveEdit(modal.todo.id, title, notes)}
+          onSave={(title, notes, tags) => saveEdit(modal.todo.id, title, notes, tags)}
         />
+      )}
+      {tagsModalOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6"
+          onClick={() => setTagsModalOpen(false)}
+        >
+          <div
+            className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="text-fgmute text-xs uppercase tracking-wide">Manage tags</div>
+              <button
+                onClick={() => setTagsModalOpen(false)}
+                className="text-fgmute hover:text-fg text-sm"
+              >
+                Close
+              </button>
+            </div>
+            <TagsManager />
+          </div>
+        </div>
       )}
       {undo && (
         <UndoToast

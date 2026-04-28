@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
-import { TagsManager } from "../components/TagsManager";
 
 export function Settings() {
   const [defaultNotifyMin, setDefaultNotifyMin] = useState("5");
@@ -91,14 +90,6 @@ export function Settings() {
             {savingPopup ? "saving…" : "save"}
           </button>
         </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h3 className="text-fgmute uppercase text-xs">Tags</h3>
-        <p className="text-fgmute text-sm">
-          Tag colors apply everywhere — todo cards, the calendar, etc.
-        </p>
-        <TagsManager />
       </section>
 
       {savedAt && <div className="text-fgmute text-xs">saved at {savedAt}</div>}
