@@ -4,7 +4,7 @@ import { RefreshCw, Settings as SettingsIcon } from "lucide-react";
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
 import { MeetingCard } from "../components/MeetingCard";
-import { CalDAVSettings } from "../components/CalDAVSettings";
+import { CalendarSettingsModal } from "../components/CalendarSettingsModal";
 import { linkify } from "../lib/linkify";
 import type { Meeting } from "../lib/types";
 
@@ -128,27 +128,14 @@ export function Calendar() {
               <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
             </button>
             <button
-              onClick={() => setSettingsOpen((v) => !v)}
-              title="CalDAV settings"
-              className={`p-2 rounded hover:bg-bgsub ${settingsOpen ? "bg-bgsub" : ""}`}
+              onClick={() => setSettingsOpen(true)}
+              title="Calendar settings"
+              className="p-2 rounded hover:bg-bgsub"
             >
               <SettingsIcon size={16} />
             </button>
           </div>
         </div>
-
-        {settingsOpen && (
-          <section className="border border-bgmute rounded p-4 bg-bgsub/50">
-            <CalDAVSettings
-              onSaved={() => {
-                Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")]).then(([u, n]) =>
-                  setConfigured(Boolean(u.value && n.value)),
-                );
-                void reload();
-              }}
-            />
-          </section>
-        )}
 
         {meetingsLoading && <div className="text-fgmute">loading…</div>}
 
@@ -205,6 +192,18 @@ export function Calendar() {
           ) : null,
         )}
       </div>
+
+      {settingsOpen && (
+        <CalendarSettingsModal
+          onClose={() => setSettingsOpen(false)}
+          onSaved={() => {
+            Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")]).then(([u, n]) =>
+              setConfigured(Boolean(u.value && n.value)),
+            );
+            void reload();
+          }}
+        />
+      )}
 
       {selected && (
         <aside className="flex-1 min-w-0 flex flex-col gap-3 border-l border-bgmute pl-4">
