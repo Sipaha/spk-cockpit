@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
 import { TimerBadge } from "../components/TimerBadge";
-import { AddTodoForm } from "../components/AddTodoForm";
 import type { Todo } from "../lib/types";
 import { EventStream } from "../lib/events";
 
@@ -81,8 +80,6 @@ export function Popover() {
           </button>
         ))}
       </div>
-
-      <AddTodoForm />
 
       <Link to="/" className="text-fgmute text-xs underline self-start">
         Open full window &#8594;

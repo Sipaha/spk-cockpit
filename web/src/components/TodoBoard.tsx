@@ -15,11 +15,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
+import { parseQuickAdd } from "../lib/parser";
+import { Priority } from "../lib/types";
 import { TodoRow } from "./TodoRow";
+import { TodoEditorModal } from "./TodoEditorModal";
 import type { Todo, TodoStatus } from "../lib/types";
 
 const COLUMNS: { id: TodoStatus; label: string }[] = [
@@ -28,8 +31,6 @@ const COLUMNS: { id: TodoStatus; label: string }[] = [
   { id: "done", label: "Done" },
 ];
 
-// Done column hides cards that were completed more than this many days ago,
-// so finished work doesn't pile up forever in the rightmost column.
 const DONE_VISIBLE_DAYS = 3;
 
 type Buckets = Record<TodoStatus, Todo[]>;
@@ -43,10 +44,10 @@ function bucketize(todos: Todo[]): Buckets {
     }
     if (t.status in out) out[t.status].push(t);
   }
-  // The list endpoint already orders by sort_order DESC, so each bucket is
-  // top-to-bottom in the right order. Keep the array as-is.
   return out;
 }
+
+type ModalState = { mode: "new" } | { mode: "edit"; todo: Todo } | null;
 
 export function TodoBoard() {
   const {
@@ -61,7 +62,6 @@ export function TodoBoard() {
   } = useTodoStore();
 
   useEffect(() => {
-    // The board always shows the Done column, so force-include done todos.
     setIncludeDone(true);
     void load();
     void loadActiveTimer();
@@ -71,8 +71,6 @@ export function TodoBoard() {
 
   const buckets = useMemo(() => bucketize(todos), [todos]);
 
-  // Optimistic local copy so the card lands in its new column before the API
-  // round-trip completes; reset whenever the server-side list refreshes.
   const [override, setOverride] = useState<Buckets | null>(null);
   useEffect(() => {
     setOverride(null);
@@ -84,6 +82,8 @@ export function TodoBoard() {
     () => todos.find((t) => t.id === activeId) ?? null,
     [activeId, todos],
   );
+
+  const [modal, setModal] = useState<ModalState>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -114,9 +114,6 @@ export function TodoBoard() {
     const moved = todos.find((t) => t.id === id);
     if (!moved) return;
 
-    // Build the destination column without the moved card and figure out
-    // where it landed (index of the card it was dropped on, or end of list
-    // when the drop target was the column itself).
     const dest = view[toCol].filter((t) => t.id !== id);
     let dropIndex = dest.length;
     if (overId !== toCol) {
@@ -134,7 +131,7 @@ export function TodoBoard() {
     } else if (below) {
       newSortOrder = below.sortOrder + 1;
     } else {
-      newSortOrder = moved.sortOrder; // empty column: keep
+      newSortOrder = moved.sortOrder;
     }
 
     const sameColumn = fromCol === toCol;
@@ -142,9 +139,6 @@ export function TodoBoard() {
       sameColumn && view[fromCol].findIndex((t) => t.id === id) === dropIndex;
     if (sameSlot && newSortOrder === moved.sortOrder) return;
 
-    // Optimistic reorder so the card stays where it was dropped during the
-    // PATCH round-trip; the SSE event handler will replace this with the
-    // canonical state when it arrives.
     const next: Buckets = {
       open: view.open.slice(),
       in_progress: view.in_progress.slice(),
@@ -174,8 +168,27 @@ export function TodoBoard() {
   async function stopTimer() {
     await api.stopTimer();
   }
-  async function renameTitle(t: Todo, title: string) {
-    await api.updateTodo(t.id, { title });
+  function openEdit(todo: Todo) {
+    setModal({ mode: "edit", todo });
+  }
+
+  // Save handler for the create modal: parse the first line for #tags,
+  // !priority, due:… via the same quick-add parser the previous inline form
+  // used. The cleaned title (without those tokens) becomes Todo.Title;
+  // remaining lines fall through unchanged as notes.
+  async function createFromModal(rawTitle: string, notes: string) {
+    const parsed = parseQuickAdd(rawTitle);
+    await api.createTodo({
+      title: parsed.title || rawTitle,
+      notes: notes || undefined,
+      priority: parsed.priority ?? Priority.Normal,
+      tags: parsed.tags.length > 0 ? parsed.tags : undefined,
+      dueAt: parsed.dueAt,
+    });
+  }
+
+  async function saveEdit(id: string, title: string, notes: string) {
+    await api.updateTodo(id, { title, notes });
   }
 
   const cardProps = (t: Todo) => ({
@@ -184,12 +197,20 @@ export function TodoBoard() {
       activeTimer && activeTimer.todoId === t.id ? activeTimer.startedAt : null,
     onDelete: remove,
     onStopTimer: stopTimer,
-    onRenameTitle: renameTitle,
+    onEdit: openEdit,
   });
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-xl font-semibold">Todos</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">Todos</h2>
+        <button
+          onClick={() => setModal({ mode: "new" })}
+          className="flex items-center gap-1 px-3 py-1.5 bg-accent text-bg rounded text-sm hover:opacity-90"
+        >
+          <Plus size={14} /> Add
+        </button>
+      </div>
       {loading && <div className="text-fgmute">loading…</div>}
       {error && <div className="text-urgent">error: {error}</div>}
       <DndContext
@@ -221,6 +242,22 @@ export function TodoBoard() {
           )}
         </DragOverlay>
       </DndContext>
+      {modal?.mode === "new" && (
+        <TodoEditorModal
+          heading="New todo"
+          initialText=""
+          onClose={() => setModal(null)}
+          onSave={createFromModal}
+        />
+      )}
+      {modal?.mode === "edit" && (
+        <TodoEditorModal
+          heading="Edit todo"
+          initialText={modal.todo.title + (modal.todo.notes ? "\n" + modal.todo.notes : "")}
+          onClose={() => setModal(null)}
+          onSave={(title, notes) => saveEdit(modal.todo.id, title, notes)}
+        />
+      )}
     </div>
   );
 }
@@ -281,18 +318,19 @@ function SortableCard({ todo, children }: SortableCardProps) {
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
+  // Listeners are spread on the wrapper so the entire card body acts as a
+  // drag handle. PointerSensor's distance: 6 activation lets a click fall
+  // through to nested buttons / the title-click edit handler instead of
+  // starting a drag — drags only kick in once the pointer has moved.
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center bg-bg rounded">
-      <button
-        {...attributes}
-        {...listeners}
-        className="self-stretch px-1 text-fgmute hover:text-fg cursor-grab active:cursor-grabbing flex items-center"
-        aria-label="Drag to reorder"
-        type="button"
-      >
-        <GripVertical size={14} />
-      </button>
-      <div className="flex-1 min-w-0">{children}</div>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="bg-bg rounded cursor-grab active:cursor-grabbing"
+    >
+      {children}
     </div>
   );
 }
