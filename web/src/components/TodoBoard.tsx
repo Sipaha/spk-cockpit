@@ -178,9 +178,6 @@ export function TodoBoard() {
       // ignore — restore failure leaves the toast dismissed; user can find it in Trash
     }
   }
-  async function stopTimer(t: Todo) {
-    await api.stopTimer(t.id);
-  }
   function openEdit(todo: Todo) {
     setModal({ mode: "edit", todo });
   }
@@ -213,7 +210,6 @@ export function TodoBoard() {
       todo: t,
       activeTimerStartedAt: session ? session.startedAt : null,
       onDelete: remove,
-      onStopTimer: stopTimer,
       onEdit: openEdit,
     };
   };

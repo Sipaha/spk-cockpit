@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Square } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { Todo } from "../lib/types";
 import { Priority } from "../lib/types";
 import { TagPill } from "./TagPill";
@@ -33,7 +33,6 @@ export interface TodoRowProps {
   todo: Todo;
   activeTimerStartedAt: number | null;
   onDelete: (todo: Todo) => void;
-  onStopTimer: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
 }
 
@@ -41,11 +40,14 @@ export function TodoRow({
   todo,
   activeTimerStartedAt,
   onDelete,
-  onStopTimer,
   onEdit,
 }: TodoRowProps) {
   const isDone = todo.status === "done";
   const hasTimer = activeTimerStartedAt !== null;
+  // Delete only from the "To Do" column. Once a todo's been picked up
+  // (in_progress) or finished, dropping it should be a deliberate Trash-page
+  // action, not a one-click hover gesture from a busy board.
+  const canDelete = todo.status === "open";
 
   return (
     <div className="flex items-center gap-3 p-3 rounded hover:bg-bgsub group">
@@ -76,28 +78,18 @@ export function TodoRow({
       >
         <Pencil size={16} />
       </button>
-      {hasTimer && (
+      {canDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onStopTimer(todo);
+            onDelete(todo);
           }}
-          className="text-urgent hover:text-fg"
-          aria-label="Stop timer"
+          className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-urgent"
+          aria-label="Delete"
         >
-          <Square size={16} />
+          <Trash2 size={16} />
         </button>
       )}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(todo);
-        }}
-        className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-urgent"
-        aria-label="Delete"
-      >
-        <Trash2 size={16} />
-      </button>
     </div>
   );
 }
