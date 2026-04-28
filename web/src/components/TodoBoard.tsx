@@ -227,21 +227,38 @@ export function TodoBoard() {
   // used. The cleaned title (without those tokens) becomes Todo.Title;
   // remaining lines fall through unchanged as notes. Tags entered explicitly
   // via TagInput are merged with whatever the parser pulled out of the
-  // title, so both pathways add up.
-  async function createFromModal(rawTitle: string, notes: string, tags: string[]) {
+  // title, so both pathways add up. The modal-selected priority overrides
+  // the parsed one when the user touched the priority picker (i.e. it's
+  // not the default Normal); otherwise the parsed tag wins.
+  async function createFromModal(
+    rawTitle: string,
+    notes: string,
+    tags: string[],
+    priority: Priority,
+  ) {
     const parsed = parseQuickAdd(rawTitle);
     const merged = Array.from(new Set([...parsed.tags, ...tags]));
+    const finalPriority =
+      priority !== Priority.Normal
+        ? priority
+        : parsed.priority ?? Priority.Normal;
     await api.createTodo({
       title: parsed.title || rawTitle,
       notes: notes || undefined,
-      priority: parsed.priority ?? Priority.Normal,
+      priority: finalPriority,
       tags: merged.length > 0 ? merged : undefined,
       dueAt: parsed.dueAt,
     });
   }
 
-  async function saveEdit(id: string, title: string, notes: string, tags: string[]) {
-    await api.updateTodo(id, { title, notes, tags });
+  async function saveEdit(
+    id: string,
+    title: string,
+    notes: string,
+    tags: string[],
+    priority: Priority,
+  ) {
+    await api.updateTodo(id, { title, notes, tags, priority });
   }
 
   const cardProps = (t: Todo) => {
@@ -330,6 +347,7 @@ export function TodoBoard() {
           heading="New todo"
           initialText=""
           initialTags={[]}
+          initialPriority={Priority.Normal}
           tagSuggestions={tagNames}
           onClose={() => setModal(null)}
           onSave={createFromModal}
@@ -348,9 +366,12 @@ export function TodoBoard() {
           heading="Edit todo"
           initialText={modal.todo.title + (modal.todo.notes ? "\n" + modal.todo.notes : "")}
           initialTags={modal.todo.tags ?? []}
+          initialPriority={modal.todo.priority}
           tagSuggestions={tagNames}
           onClose={() => setModal(null)}
-          onSave={(title, notes, tags) => saveEdit(modal.todo.id, title, notes, tags)}
+          onSave={(title, notes, tags, priority) =>
+            saveEdit(modal.todo.id, title, notes, tags, priority)
+          }
         />
       )}
       {tagsModalOpen && (

@@ -58,7 +58,9 @@ function Chip({ name, onRemove }: { name: string; onRemove: () => void }) {
 export function TagInput({ value, onChange, suggestions, placeholder }: TagInputProps) {
   const [draft, setDraft] = useState("");
   const [highlight, setHighlight] = useState(0);
-  const [focused, setFocused] = useState(false);
+  // Visibility is its own state (rather than derived from focus + draft)
+  // so adding a tag can close the list without losing focus on the input.
+  const [open, setOpen] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
 
   const lower = draft.toLowerCase().replace(/^#/, "");
@@ -79,6 +81,7 @@ export function TagInput({ value, onChange, suggestions, placeholder }: TagInput
     onChange([...value, name]);
     setDraft("");
     setHighlight(0);
+    setOpen(false);
   }
 
   function removeAt(i: number) {
@@ -109,11 +112,11 @@ export function TagInput({ value, onChange, suggestions, placeholder }: TagInput
     } else if (e.key === "Escape") {
       e.preventDefault();
       setDraft("");
-      setFocused(false);
+      setOpen(false);
     }
   }
 
-  const isOpen = focused && filtered.length > 0;
+  const isOpen = open && filtered.length > 0;
 
   return (
     <div className="flex flex-col gap-1 relative">
@@ -130,12 +133,12 @@ export function TagInput({ value, onChange, suggestions, placeholder }: TagInput
           onChange={(e) => {
             setDraft(e.target.value);
             setHighlight(0);
+            setOpen(true);
           }}
-          onFocus={() => setFocused(true)}
+          onFocus={() => setOpen(true)}
           // Delay blur so a click on a suggestion's mousedown handler runs
-          // before focused flips to false (otherwise the dropdown unmounts
-          // before the click fires).
-          onBlur={() => setTimeout(() => setFocused(false), 120)}
+          // before the dropdown unmounts.
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={onKeyDown}
           placeholder={placeholder ?? (value.length === 0 ? "add tag…" : "")}
           className="flex-1 min-w-24 bg-transparent text-fg text-sm focus:outline-none"
