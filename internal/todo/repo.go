@@ -45,6 +45,7 @@ type TagRepo interface {
 	Upsert(ctx context.Context, t api.Tag) error
 	List(ctx context.Context) ([]api.Tag, error)
 	Delete(ctx context.Context, name string) error
+	Rename(ctx context.Context, oldName, newName string) error
 	SetTodoTags(ctx context.Context, todoID string, tags []string) error
 	GetTodoTags(ctx context.Context, todoID string) ([]string, error)
 }

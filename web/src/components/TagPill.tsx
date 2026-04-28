@@ -23,7 +23,7 @@ export function TagPill({ name, color }: { name: string; color?: string }) {
   if (c && /^#[0-9a-fA-F]{6}$/.test(c)) {
     return (
       <span
-        className="inline-block px-2 py-0.5 rounded-full text-xs"
+        className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
         style={{ backgroundColor: c, color: readableText(c) }}
       >
         {name}
@@ -31,7 +31,7 @@ export function TagPill({ name, color }: { name: string; color?: string }) {
     );
   }
   return (
-    <span className="inline-block px-2 py-0.5 rounded-full bg-bgmute text-fgmute text-xs">
+    <span className="inline-block px-2 py-0.5 rounded-full bg-bgmute text-fgmute text-xs font-medium">
       {name}
     </span>
   );

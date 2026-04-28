@@ -51,6 +51,29 @@ func (r *Tag) Delete(_ context.Context, name string) error {
 	return nil
 }
 
+// Rename moves a tag to a new name and updates every todo link.
+func (r *Tag) Rename(_ context.Context, oldName, newName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if oldName == newName {
+		return nil
+	}
+	t, ok := r.tags[oldName]
+	if !ok {
+		return nil
+	}
+	t.Name = newName
+	delete(r.tags, oldName)
+	r.tags[newName] = t
+	for _, m := range r.todoTags {
+		if _, has := m[oldName]; has {
+			delete(m, oldName)
+			m[newName] = struct{}{}
+		}
+	}
+	return nil
+}
+
 // SetTodoTags replaces the full tag set on a todo (auto-creating tag rows).
 func (r *Tag) SetTodoTags(_ context.Context, todoID string, tags []string) error {
 	r.mu.Lock()

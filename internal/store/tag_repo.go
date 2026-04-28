@@ -57,6 +57,23 @@ func (r *TagRepo) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
+// Rename changes a tag's name; the FK on todo_tags is ON UPDATE CASCADE so
+// every link follows along automatically. Returns ErrTagExists if newName is
+// already taken (the unique-constraint violation).
+func (r *TagRepo) Rename(ctx context.Context, oldName, newName string) error {
+	if oldName == newName {
+		return nil
+	}
+	res, err := r.db.ExecContext(ctx, `UPDATE tags SET name = ? WHERE name = ?`, newName, oldName)
+	if err != nil {
+		return fmt.Errorf("rename tag: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // SetTodoTags replaces the full set of tags on a todo, auto-creating any missing tag rows.
 func (r *TagRepo) SetTodoTags(ctx context.Context, todoID string, tags []string) error {
 	tx, err := r.db.BeginTx(ctx, nil)

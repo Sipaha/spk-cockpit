@@ -32,7 +32,7 @@ function Chip({ name, onRemove }: { name: string; onRemove: () => void }) {
   const colored = /^#[0-9a-fA-F]{6}$/.test(c);
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
         colored ? "" : "bg-bgmute text-fgmute"
       }`}
       style={colored ? { backgroundColor: c, color: readableText(c) } : undefined}

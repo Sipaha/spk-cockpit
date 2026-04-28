@@ -260,6 +260,31 @@ func handleUpsertTag(d *Deps) http.HandlerFunc {
 	}
 }
 
+func handleRenameTag(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		oldName := strings.TrimSpace(r.PathValue("name"))
+		if oldName == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
+			return
+		}
+		var req api.RenameTagRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		newName := strings.TrimSpace(req.NewName)
+		if newName == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "newName required")
+			return
+		}
+		if err := d.Tags.Rename(r.Context(), oldName, newName); err != nil {
+			writeError(w, http.StatusBadRequest, "tag.rename_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func handleDeleteTag(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSpace(r.PathValue("name"))

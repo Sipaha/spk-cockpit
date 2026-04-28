@@ -62,6 +62,11 @@ type UpsertTagRequest struct {
 	Color string `json:"color"`
 }
 
+// RenameTagRequest is the body of POST /api/tags/{name}/rename.
+type RenameTagRequest struct {
+	NewName string `json:"newName"`
+}
+
 // TodoEvent is an audit-log entry for a todo state transition.
 type TodoEvent struct {
 	ID        int64  `json:"id"`

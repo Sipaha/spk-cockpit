@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
 import { TagPill } from "./TagPill";
 
 export function TagsManager() {
   const { tags, loadTags } = useTodoStore();
+  const loadTodos = useTodoStore((s) => s.load);
   const [creating, setCreating] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const editRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void loadTags();
@@ -28,7 +32,9 @@ export function TagsManager() {
     setBusy(name);
     try {
       await api.deleteTag(name);
-      await loadTags();
+      // Removing a tag also detaches it from every todo via FK CASCADE,
+      // so refresh both caches.
+      await Promise.all([loadTags(), loadTodos()]);
     } finally {
       setBusy(null);
     }
@@ -42,6 +48,26 @@ export function TagsManager() {
       await api.upsertTag(name, "#89b4fa");
       setCreating("");
       await loadTags();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function startRename(name: string) {
+    setEditingName(name);
+    setDraftName(name);
+    requestAnimationFrame(() => editRef.current?.select());
+  }
+
+  async function commitRename() {
+    if (!editingName) return;
+    const next = draftName.trim().replace(/^#/, "");
+    setEditingName(null);
+    if (!next || next === editingName) return;
+    setBusy(editingName);
+    try {
+      await api.renameTag(editingName, next);
+      await Promise.all([loadTags(), loadTodos()]);
     } finally {
       setBusy(null);
     }
@@ -76,14 +102,43 @@ export function TagsManager() {
         <ul className="flex flex-col gap-1">
           {tags.map((t) => {
             const c = /^#[0-9a-fA-F]{6}$/.test(t.color) ? t.color : "#89b4fa";
+            const isEditing = editingName === t.name;
             return (
               <li
                 key={t.name}
                 className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-bgsub group"
               >
-                <span className="flex-1">
-                  <TagPill name={t.name} color={c} />
+                <span className="flex-1 min-w-0 flex items-center gap-2">
+                  {isEditing ? (
+                    <input
+                      ref={editRef}
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      onBlur={() => void commitRename()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void commitRename();
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          setEditingName(null);
+                        }
+                      }}
+                      className="bg-bg border border-bgmute rounded px-2 py-0.5 text-fg text-sm focus:outline-none focus:border-accent"
+                    />
+                  ) : (
+                    <TagPill name={t.name} color={c} />
+                  )}
                 </span>
+                <button
+                  onClick={() => startRename(t.name)}
+                  disabled={busy === t.name}
+                  className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-accent"
+                  aria-label={`Rename ${t.name}`}
+                  title="Rename"
+                >
+                  <Pencil size={14} />
+                </button>
                 <input
                   type="color"
                   value={c}

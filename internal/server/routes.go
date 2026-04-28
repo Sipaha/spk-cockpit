@@ -25,6 +25,7 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 
 	mux.HandleFunc("GET /api/tags", handleListTags(d))
 	mux.HandleFunc("PUT /api/tags/{name}", handleUpsertTag(d))
+	mux.HandleFunc("POST /api/tags/{name}/rename", handleRenameTag(d))
 	mux.HandleFunc("DELETE /api/tags/{name}", handleDeleteTag(d))
 	mux.HandleFunc("GET /api/events", handleEvents(d))
 

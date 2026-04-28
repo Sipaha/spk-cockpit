@@ -63,6 +63,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ color }),
     }),
+  renameTag: (oldName: string, newName: string) =>
+    request<void>(`/api/tags/${encodeURIComponent(oldName)}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ newName }),
+    }),
   deleteTag: (name: string) =>
     request<void>(`/api/tags/${encodeURIComponent(name)}`, { method: "DELETE" }),
 
