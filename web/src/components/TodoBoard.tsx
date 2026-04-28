@@ -34,14 +34,35 @@ const COLUMNS: { id: TodoStatus; label: string }[] = [
 ];
 
 const DONE_VISIBLE_DAYS = 3;
+const HIDDEN_DONE_KEY = "spk-cockpit.hiddenDone";
 
 type Buckets = Record<TodoStatus, Todo[]>;
 
-function bucketize(todos: Todo[]): Buckets {
+function loadHiddenDone(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_DONE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === "string")) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveHiddenDone(ids: Set<string>) {
+  try {
+    window.localStorage.setItem(HIDDEN_DONE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // ignore quota errors — the next render will simply re-show the items.
+  }
+}
+
+function bucketize(todos: Todo[], hiddenDone: Set<string>): Buckets {
   const out: Buckets = { open: [], in_progress: [], done: [], cancelled: [] };
   const cutoff = Math.floor(Date.now() / 1000) - DONE_VISIBLE_DAYS * 24 * 3600;
   for (const t of todos) {
     if (t.status === "done") {
+      if (hiddenDone.has(t.id)) continue;
       if (!t.doneAt || t.doneAt < cutoff) continue;
     }
     if (t.status in out) out[t.status].push(t);
@@ -71,7 +92,8 @@ export function TodoBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const buckets = useMemo(() => bucketize(todos), [todos]);
+  const [hiddenDone, setHiddenDone] = useState<Set<string>>(() => loadHiddenDone());
+  const buckets = useMemo(() => bucketize(todos, hiddenDone), [todos, hiddenDone]);
 
   const [override, setOverride] = useState<Buckets | null>(null);
   useEffect(() => {
@@ -160,6 +182,16 @@ export function TodoBoard() {
         sortOrder: newSortOrder,
       };
       if (!sameColumn) patch.status = toCol;
+      // If a card is dragged out of Done, drop its hidden flag so re-marking
+      // it Done later doesn't silently keep it hidden.
+      if (fromCol === "done" && toCol !== "done" && hiddenDone.has(id)) {
+        setHiddenDone((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          saveHiddenDone(next);
+          return next;
+        });
+      }
       await api.updateTodo(id, patch);
     } catch {
       setOverride(null);
@@ -180,6 +212,14 @@ export function TodoBoard() {
   }
   function openEdit(todo: Todo) {
     setModal({ mode: "edit", todo });
+  }
+  function hideFromDone(todo: Todo) {
+    setHiddenDone((prev) => {
+      const next = new Set(prev);
+      next.add(todo.id);
+      saveHiddenDone(next);
+      return next;
+    });
   }
 
   // Save handler for the create modal: parse the first line for #tags,
@@ -211,6 +251,7 @@ export function TodoBoard() {
       activeTimerStartedAt: session ? session.startedAt : null,
       onDelete: remove,
       onEdit: openEdit,
+      onHide: t.status === "done" ? hideFromDone : undefined,
     };
   };
 

@@ -1,4 +1,4 @@
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 import type { Todo } from "../lib/types";
 import { Priority } from "../lib/types";
 import { TagPill } from "./TagPill";
@@ -34,6 +34,9 @@ export interface TodoRowProps {
   activeTimerStartedAt: number | null;
   onDelete: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
+  // Hides a Done card from the board immediately (vs waiting for the
+  // 3-day Done-column timeout). Optional; only the Done-column wires it up.
+  onHide?: (todo: Todo) => void;
 }
 
 export function TodoRow({
@@ -41,6 +44,7 @@ export function TodoRow({
   activeTimerStartedAt,
   onDelete,
   onEdit,
+  onHide,
 }: TodoRowProps) {
   const isDone = todo.status === "done";
   const hasTimer = activeTimerStartedAt !== null;
@@ -88,6 +92,19 @@ export function TodoRow({
           aria-label="Delete"
         >
           <Trash2 size={16} />
+        </button>
+      )}
+      {isDone && onHide && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onHide(todo);
+          }}
+          className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-fg"
+          aria-label="Hide from Done"
+          title="Hide from Done"
+        >
+          <X size={16} />
         </button>
       )}
     </div>
