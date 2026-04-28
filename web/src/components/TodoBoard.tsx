@@ -92,7 +92,11 @@ export function TodoBoard() {
   const [modal, setModal] = useState<ModalState>(null);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [undo, setUndo] = useState<Todo | null>(null);
-  const tagNames = useTodoStore((s) => s.tags.map((t) => t.name));
+  // Reading s.tags directly keeps the selector referentially stable; mapping
+  // to names runs in a memo so we don't trigger Zustand's "snapshot changed
+  // every render" infinite-loop guard.
+  const tagsRaw = useTodoStore((s) => s.tags);
+  const tagNames = useMemo(() => tagsRaw.map((t) => t.name), [tagsRaw]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
