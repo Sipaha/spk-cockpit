@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Pencil, Trash2, Play, Square } from "lucide-react";
+import { Pencil, Trash2, Square } from "lucide-react";
 import type { Todo } from "../lib/types";
 import { Priority } from "../lib/types";
 import { TagPill } from "./TagPill";
@@ -22,9 +22,7 @@ const priorityGlyph: Record<number, string> = {
 export interface TodoRowProps {
   todo: Todo;
   activeTimerStartedAt: number | null;
-  onToggleDone: (todo: Todo) => void;
   onDelete: (todo: Todo) => void;
-  onStartTimer: (todo: Todo) => void;
   onStopTimer: (todo: Todo) => void;
   onRenameTitle: (todo: Todo, title: string) => void;
 }
@@ -32,9 +30,7 @@ export interface TodoRowProps {
 export function TodoRow({
   todo,
   activeTimerStartedAt,
-  onToggleDone,
   onDelete,
-  onStartTimer,
   onStopTimer,
   onRenameTitle,
 }: TodoRowProps) {
@@ -48,7 +44,6 @@ export function TodoRow({
   useEffect(() => {
     if (editing) {
       setDraft(todo.title);
-      // focus + select after the input mounts so Enter-to-save replaces text fast.
       requestAnimationFrame(() => inputRef.current?.select());
     }
   }, [editing, todo.title]);
@@ -61,13 +56,6 @@ export function TodoRow({
 
   return (
     <div className="flex items-center gap-3 p-3 rounded hover:bg-bgsub group">
-      <button
-        onClick={() => onToggleDone(todo)}
-        className={`w-5 h-5 rounded border ${isDone ? "bg-success border-success" : "border-fgmute"} flex items-center justify-center`}
-        aria-label={isDone ? "Mark as open" : "Mark as done"}
-      >
-        {isDone && <Check size={14} className="text-bg" />}
-      </button>
       <span className={priorityClass[todo.priority]}>{priorityGlyph[todo.priority]}</span>
       {editing ? (
         <input
@@ -110,22 +98,16 @@ export function TodoRow({
           <Pencil size={16} />
         </button>
       )}
-      {hasTimer ? (
+      {hasTimer && (
+        // Manual stop is still useful for "interrupt the timer without
+        // changing column" — auto-stop fires when leaving In Progress, but
+        // sometimes the user wants to pause without moving the card.
         <button
           onClick={() => onStopTimer(todo)}
           className="text-urgent hover:text-fg"
           aria-label="Stop timer"
         >
           <Square size={16} />
-        </button>
-      ) : (
-        <button
-          onClick={() => onStartTimer(todo)}
-          className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-accent"
-          aria-label="Start timer"
-          disabled={isDone}
-        >
-          <Play size={16} />
         </button>
       )}
       <button

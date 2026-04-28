@@ -167,16 +167,9 @@ export function TodoBoard() {
     }
   }
 
-  async function toggleDone(t: Todo) {
-    const next: TodoStatus = t.status === "done" ? "open" : "done";
-    await api.updateTodo(t.id, { status: next });
-  }
   async function remove(t: Todo) {
     if (!confirm(`Delete "${t.title}"?`)) return;
     await api.deleteTodo(t.id);
-  }
-  async function startTimer(t: Todo) {
-    await api.startTimer(t.id);
   }
   async function stopTimer() {
     await api.stopTimer();
@@ -189,9 +182,7 @@ export function TodoBoard() {
     todo: t,
     activeTimerStartedAt:
       activeTimer && activeTimer.todoId === t.id ? activeTimer.startedAt : null,
-    onToggleDone: toggleDone,
     onDelete: remove,
-    onStartTimer: startTimer,
     onStopTimer: stopTimer,
     onRenameTitle: renameTitle,
   });
