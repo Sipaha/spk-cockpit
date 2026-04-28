@@ -55,14 +55,12 @@ export function TodoEditorModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      <div
-        className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-2xl flex flex-col gap-3 p-4"
-        onClick={(e) => e.stopPropagation()}
-      >
+    // The backdrop deliberately does NOT close on click: text selection
+    // inside the textarea can release the pointer outside the dialog, and
+    // we don't want that to dismiss what the user was editing. Only Esc,
+    // Cancel, or Save close the modal.
+    <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6">
+      <div className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-2xl flex flex-col gap-3 p-4">
         <div className="text-fgmute text-xs uppercase tracking-wide">{heading}</div>
         <textarea
           ref={ref}

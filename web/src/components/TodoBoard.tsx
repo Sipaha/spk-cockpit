@@ -62,21 +62,16 @@ export function TodoBoard() {
     activeTimers,
     loadActiveTimer,
     loadTags,
-    loadTrackerTemplate,
-    trackerUrlTemplate,
-    trackerTicketPattern,
+    loadTaskPatterns,
+    taskPatterns,
   } = useTodoStore();
-  const tracker = useMemo(
-    () => ({ pattern: trackerTicketPattern, urlTemplate: trackerUrlTemplate }),
-    [trackerTicketPattern, trackerUrlTemplate],
-  );
 
   useEffect(() => {
     setIncludeDone(true);
     void load();
     void loadActiveTimer();
     void loadTags();
-    void loadTrackerTemplate();
+    void loadTaskPatterns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -227,7 +222,7 @@ export function TodoBoard() {
     return {
       todo: t,
       activeTimerStartedAt: session ? session.startedAt : null,
-      tracker,
+      taskPatterns,
       onDelete: remove,
       onEdit: openEdit,
       onHide: t.status === "done" ? hideFromDone : undefined,
@@ -306,14 +301,8 @@ export function TodoBoard() {
         />
       )}
       {tagsModalOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6"
-          onClick={() => setTagsModalOpen(false)}
-        >
-          <div
-            className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-6">
+          <div className="bg-bgsub border border-bgmute rounded shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4">
             <div className="flex items-center justify-between">
               <div className="text-fgmute text-xs uppercase tracking-wide">Manage tags</div>
               <button

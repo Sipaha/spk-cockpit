@@ -4,7 +4,7 @@ import { Priority } from "../lib/types";
 import { TagPill } from "./TagPill";
 import { TimerBadge } from "./TimerBadge";
 import { renderSmart } from "../lib/smartText";
-import type { TrackerConfig } from "../lib/smartText";
+import type { TaskPattern } from "../lib/smartText";
 
 const priorityClass: Record<number, string> = {
   [Priority.Urgent]: "text-urgent",
@@ -28,7 +28,7 @@ function firstLine(s: string): string {
 export interface TodoRowProps {
   todo: Todo;
   activeTimerStartedAt: number | null;
-  tracker: TrackerConfig;
+  taskPatterns: TaskPattern[];
   onDelete: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
   onHide?: (todo: Todo) => void;
@@ -37,7 +37,7 @@ export interface TodoRowProps {
 export function TodoRow({
   todo,
   activeTimerStartedAt,
-  tracker,
+  taskPatterns,
   onDelete,
   onEdit,
   onHide,
@@ -63,11 +63,11 @@ export function TodoRow({
         title="Click to edit"
       >
         <div className={`truncate ${isDone ? "line-through text-fgmute" : ""}`}>
-          {renderSmart(titleLine, tracker)}
+          {renderSmart(titleLine, taskPatterns)}
         </div>
         {notesLine && (
           <div className="truncate text-fgmute text-xs">
-            {renderSmart(notesLine, tracker)}
+            {renderSmart(notesLine, taskPatterns)}
           </div>
         )}
       </div>

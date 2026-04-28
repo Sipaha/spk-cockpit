@@ -1,28 +1,36 @@
 import type { MouseEvent, ReactNode } from "react";
 
-// Universal task-tracker rendering driven by two user-supplied regexes:
+// Universal task-tracker rendering. The user configures one or more
+// (pattern, urlTemplate) pairs in Settings. Each pattern is a regex that
+// matches a task reference in any text and exposes capture groups for the
+// URL template:
 //
-//   tickerPattern — matches a ticket reference in any text (captures the
-//                   parts that should be reusable in the URL/display).
-//                   Default: \b([A-Z][A-Z0-9_]*-\d+)\b — captures things
-//                   like COREDEV-197 or PROJ_2-5.
-//   urlTemplate   — string with $1, $2, $0 backrefs that resolves to a
-//                   browseable URL when applied to a tickerPattern match.
-//                   Empty disables tracker linkification entirely.
+//   - pattern      — regex source. Capture groups feed the URL.
+//                    Default: \b([A-Z][A-Z0-9_]*-\d+)\b — covers things
+//                    like COREDEV-197, PROJ_2-5.
+//   - urlTemplate  — string with $0, $1, $2… backrefs that resolves to a
+//                    browseable URL. $$ keeps a literal dollar.
 //
 // Detection runs in two passes:
-//   1. Greedy URL spans: we find https://… runs first and run tickerPattern
-//      on each of them. If a URL contains a ticket, the whole URL collapses
-//      to a single [$1] anchor pointing at the resolved tracker URL.
-//      If it doesn't, the URL stays as a plain external link.
-//   2. The remaining (non-URL) text gets a second tickerPattern pass for
-//      bare references like "fix COREDEV-197 by Friday".
+//   1. Greedy URL spans. We find https://… runs first and try every
+//      configured pattern against each one. If a URL contains a match
+//      under any pattern, the whole URL collapses into a single [$1]
+//      anchor pointing at the resolved tracker URL. Otherwise the URL
+//      stays as a plain external link.
+//   2. The remaining (non-URL) text gets a second pass for bare
+//      references like "fix COREDEV-197 by Friday".
 //
-// Anchor click handlers stop propagation so opening a ticket from inside a
+// Anchor click handlers stop propagation so opening a task from inside a
 // clickable card body doesn't also fire the card's edit handler.
 
 const URL_RE = /https?:\/\/[^\s<>"\\]+/g;
-export const DEFAULT_TICKET_PATTERN = String.raw`\b([A-Z][A-Z0-9_]*-\d+)\b`;
+export const DEFAULT_TASK_PATTERN = String.raw`\b([A-Z][A-Z0-9_]*-\d+)\b`;
+
+export interface TaskPattern {
+  pattern: string;
+  urlTemplate: string;
+  name?: string;
+}
 
 function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,9 +41,6 @@ function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
   }
 }
 
-// applyBackrefs replaces $0, $1, $2, … in `template` with the corresponding
-// regex match groups. $0 is the full match; everything past the captures
-// list is left untouched. $$ keeps a literal dollar.
 function applyBackrefs(template: string, match: RegExpMatchArray): string {
   return template.replace(/\$(\d+)|\$\$/g, (whole, num) => {
     if (whole === "$$") return "$";
@@ -45,49 +50,53 @@ function applyBackrefs(template: string, match: RegExpMatchArray): string {
   });
 }
 
-function compilePattern(src: string): RegExp | null {
-  if (!src) return null;
+interface CompiledPattern {
+  global: RegExp;       // for matchAll
+  single: RegExp;       // for first-match probe
+  urlTemplate: string;
+}
+
+function compile(p: TaskPattern): CompiledPattern | null {
+  const src = p.pattern || DEFAULT_TASK_PATTERN;
+  if (!p.urlTemplate) return null;
   try {
-    // Force a global flag so matchAll finds every occurrence; user-supplied
-    // flags like /i are honored otherwise.
-    return new RegExp(src, "g");
+    const single = new RegExp(src);
+    const flags = single.flags.includes("g") ? single.flags : single.flags + "g";
+    return {
+      global: new RegExp(src, flags),
+      single,
+      urlTemplate: p.urlTemplate,
+    };
   } catch {
     return null;
   }
 }
 
-// firstMatch returns the first match of pattern in text without disturbing
-// matchAll callers — re-compiles a non-global copy of the pattern.
-function firstMatch(pattern: RegExp, text: string): RegExpMatchArray | null {
-  const single = new RegExp(pattern.source, pattern.flags.replace("g", ""));
-  return text.match(single);
-}
-
-export interface TrackerConfig {
-  pattern: string; // regex source
-  urlTemplate: string;
-}
-
-export function renderSmart(text: string, cfg: TrackerConfig): ReactNode[] {
+export function renderSmart(text: string, patterns: TaskPattern[]): ReactNode[] {
   if (!text) return [];
-  const trackerOn = !!cfg.urlTemplate;
-  const ticket = trackerOn
-    ? compilePattern(cfg.pattern || DEFAULT_TICKET_PATTERN)
-    : null;
+  const compiled: CompiledPattern[] = [];
+  for (const p of patterns ?? []) {
+    const c = compile(p);
+    if (c) compiled.push(c);
+  }
 
   type Range = { start: number; end: number; node: ReactNode };
   const ranges: Range[] = [];
 
-  // Pass 1: URLs.
+  // Pass 1: URL spans. The first compiled pattern that matches inside
+  // a URL wins; URLs that match no pattern stay as plain external links.
   for (const m of text.matchAll(URL_RE)) {
     const start = m.index ?? 0;
     const url = m[0];
     let collapsed: { url: string; label: string } | null = null;
-    if (ticket) {
-      const inUrl = firstMatch(ticket, url);
+    for (const c of compiled) {
+      const inUrl = url.match(c.single);
       if (inUrl) {
-        const built = applyBackrefs(cfg.urlTemplate, inUrl);
-        collapsed = { url: built, label: `[${inUrl[1] ?? inUrl[0]}]` };
+        collapsed = {
+          url: applyBackrefs(c.urlTemplate, inUrl),
+          label: `[${inUrl[1] ?? inUrl[0]}]`,
+        };
+        break;
       }
     }
     ranges.push({
@@ -99,13 +108,15 @@ export function renderSmart(text: string, cfg: TrackerConfig): ReactNode[] {
     });
   }
 
-  // Pass 2: bare ticket references in non-URL spans.
-  if (ticket) {
-    for (const m of text.matchAll(ticket)) {
+  // Pass 2: bare references in non-URL spans. We collect every pattern's
+  // matches and skip those that overlap an already-claimed range, so two
+  // patterns competing for the same text don't double-render.
+  for (const c of compiled) {
+    for (const m of text.matchAll(c.global)) {
       const start = m.index ?? 0;
       const end = start + m[0].length;
       if (ranges.some((r) => start < r.end && end > r.start)) continue;
-      const url = applyBackrefs(cfg.urlTemplate, m);
+      const url = applyBackrefs(c.urlTemplate, m);
       ranges.push({
         start,
         end,

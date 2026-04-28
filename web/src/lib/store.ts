@@ -1,6 +1,28 @@
 import { create } from "zustand";
 import { api } from "./api";
+import type { TaskPattern } from "./smartText";
 import type { Todo, Tag, ApiEvent, TimerSession, Meeting, SyncStateEntry } from "./types";
+
+// parseTaskPatterns is defensive against malformed KV blobs — a single bad
+// row shouldn't take down the whole rendering pipeline.
+function parseTaskPatterns(raw: string | undefined | null): TaskPattern[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (e): e is TaskPattern =>
+          typeof e === "object" &&
+          e !== null &&
+          typeof e.pattern === "string" &&
+          typeof e.urlTemplate === "string",
+      )
+      .map((e) => ({ pattern: e.pattern, urlTemplate: e.urlTemplate, name: e.name }));
+  } catch {
+    return [];
+  }
+}
 
 interface AppState {
   todos: Todo[];
@@ -16,8 +38,7 @@ interface AppState {
 
   tags: Tag[];
 
-  trackerUrlTemplate: string;
-  trackerTicketPattern: string;
+  taskPatterns: TaskPattern[];
 
   load: () => Promise<void>;
   setIncludeDone: (v: boolean) => void;
@@ -25,7 +46,7 @@ interface AppState {
   loadMeetings: (fromUnix: number, toUnix: number) => Promise<void>;
   loadSyncStatus: () => Promise<void>;
   loadTags: () => Promise<void>;
-  loadTrackerTemplate: () => Promise<void>;
+  loadTaskPatterns: () => Promise<void>;
   applyEvent: (e: ApiEvent) => void;
 }
 
@@ -39,8 +60,7 @@ export const useTodoStore = create<AppState>((set, get) => ({
   meetingsLoading: false,
   syncStates: [],
   tags: [],
-  trackerUrlTemplate: "",
-  trackerTicketPattern: "",
+  taskPatterns: [],
 
   async load() {
     set({ loading: true, error: null });
@@ -88,18 +108,12 @@ export const useTodoStore = create<AppState>((set, get) => ({
       // ignore — UI just shows no colors
     }
   },
-  async loadTrackerTemplate() {
+  async loadTaskPatterns() {
     try {
-      const [tpl, pat] = await Promise.all([
-        api.getKv("tracker.url_template"),
-        api.getKv("tracker.ticket_pattern"),
-      ]);
-      set({
-        trackerUrlTemplate: tpl.value ?? "",
-        trackerTicketPattern: pat.value ?? "",
-      });
+      const r = await api.getKv("tracker.patterns");
+      set({ taskPatterns: parseTaskPatterns(r.value) });
     } catch {
-      set({ trackerUrlTemplate: "", trackerTicketPattern: "" });
+      set({ taskPatterns: [] });
     }
   },
 
