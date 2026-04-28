@@ -20,10 +20,11 @@ type linuxTray struct {
 	meetingInfo *systray.MenuItem
 	overdueInfo *systray.MenuItem
 	syncInfo    *systray.MenuItem
-	stopTimer   *systray.MenuItem
-	openStandup *systray.MenuItem
-	openWindow  *systray.MenuItem
-	quit        *systray.MenuItem
+	stopTimer    *systray.MenuItem
+	quickAddTodo *systray.MenuItem
+	openStandup  *systray.MenuItem
+	openWindow   *systray.MenuItem
+	quit         *systray.MenuItem
 	// nextMeetingID is the id of the meeting currently summarized by
 	// meetingInfo; the click handler reads it under t.mu so the deep-link is
 	// always consistent with the visible label.
@@ -68,6 +69,7 @@ func (t *linuxTray) Run(onReady func(), onExit func()) {
 		t.syncInfo.Hide()
 
 		systray.AddSeparator()
+		t.quickAddTodo = systray.AddMenuItem("Add todo…", "")
 		t.openWindow = systray.AddMenuItem("Open window", "")
 		t.openStandup = systray.AddMenuItem("Open standup", "")
 
@@ -165,6 +167,7 @@ func (t *linuxTray) dispatchClicks() {
 		owCh := t.openWindow.ClickedCh
 		osCh := t.openStandup.ClickedCh
 		stCh := t.stopTimer.ClickedCh
+		qaCh := t.quickAddTodo.ClickedCh
 		mtCh := t.meetingInfo.ClickedCh
 		quitCh := t.quit.ClickedCh
 		t.mu.Unlock()
@@ -181,6 +184,10 @@ func (t *linuxTray) dispatchClicks() {
 		case <-stCh:
 			if t.actions.StopTimer != nil {
 				go t.actions.StopTimer()
+			}
+		case <-qaCh:
+			if t.actions.QuickAddTodo != nil {
+				go t.actions.QuickAddTodo()
 			}
 		case <-mtCh:
 			t.mu.Lock()

@@ -5,6 +5,7 @@ import { Calendar } from "./pages/Calendar";
 import { Settings } from "./pages/Settings";
 import { Standup } from "./pages/Standup";
 import { MeetingPopup } from "./pages/MeetingPopup";
+import { QuickAddTodo } from "./pages/QuickAddTodo";
 
 export function App() {
   return (
@@ -12,6 +13,7 @@ export function App() {
       <Routes>
         <Route path="/popover" element={<Popover />} />
         <Route path="/popup-meeting" element={<MeetingPopup />} />
+        <Route path="/quick-add-todo" element={<QuickAddTodo />} />
         <Route path="*" element={<MainShell />} />
       </Routes>
     </BrowserRouter>

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -261,6 +262,19 @@ func runStart(ctx context.Context) error {
 			if _, _, err := timerSvc.Stop(context.Background()); err != nil {
 				logger.Warn("tray: stop timer failed", "err", err)
 			}
+		},
+		QuickAddTodo: func() {
+			if exePath == "" {
+				logger.Warn("tray: quick-add disabled (no executable path)")
+				return
+			}
+			cmd := exec.Command(exePath, "quick-add", "--socket="+p.SocketFile) //nolint:gosec
+			if err := cmd.Start(); err != nil {
+				logger.Warn("tray: quick-add subprocess start failed", "err", err)
+				return
+			}
+			// Reap the child so it doesn't linger as zombie when the window closes.
+			go func() { _ = cmd.Wait() }()
 		},
 		OpenMeeting: func(id string) {
 			if winApp != nil {

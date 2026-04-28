@@ -11,6 +11,8 @@ type Actions struct {
 	OpenStandup func()
 	// StopTimer stops the currently active timer session.
 	StopTimer func()
+	// QuickAddTodo opens a small standalone window to add a new todo.
+	QuickAddTodo func()
 	// OpenMeeting brings the window forward focused on a specific meeting
 	// (deep-link to /calendar?focus=<id>). Used by the next-meeting tray entry.
 	OpenMeeting func(id string)

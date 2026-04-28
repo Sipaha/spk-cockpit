@@ -103,6 +103,32 @@ func (a *App) ShowAt(path string) {
 	wruntime.WindowExecJS(a.ctx, js)
 }
 
+// RunQuickAdd starts a small standalone Wails window that renders the
+// QuickAddTodo route. It blocks until the user closes the window. Used by
+// `spk-cockpit quick-add` subprocess so the tray click can spawn a single-
+// purpose entry box without bringing up the full cockpit window.
+//
+// Standard OS chrome (titlebar + close + drag) is the Wails default; we
+// only set the size, title, and asset bridge here.
+func RunQuickAdd(assets embed.FS, socketPath string) error {
+	js := "(function(){var u='/quick-add-todo';if(location.pathname!==u){history.replaceState(null,'',u);window.dispatchEvent(new PopStateEvent('popstate'));}})();"
+	return wails.Run(&options.App{
+		Title:  "Add todo",
+		Width:  520,
+		Height: 240,
+		AssetServer: &assetserver.Options{
+			Assets:     assets,
+			Middleware: udsMiddleware(socketPath),
+		},
+		HideWindowOnClose: false,
+		AlwaysOnTop:       true,
+		Linux:             &linux.Options{ProgramName: "spk-cockpit-quick-add", Icon: appfiles.AppIcon},
+		OnDomReady: func(ctx context.Context) {
+			wruntime.WindowExecJS(ctx, js)
+		},
+	})
+}
+
 // RunPopup starts a small standalone Wails window that opens directly on the
 // meeting popup route. It blocks until the user closes the window, then returns
 // (the calling process exits naturally — popup is one-shot).
