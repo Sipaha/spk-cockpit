@@ -200,7 +200,12 @@ func Run(assets embed.FS, socketPath string, ready func(*App), loadGeometry func
 			Middleware: udsMiddleware(socketPath),
 		},
 		HideWindowOnClose: true,
-		Linux:             &linux.Options{ProgramName: "spk-cockpit", Icon: appfiles.AppIcon},
+		// Wails strips the right-click context menu in production builds.
+		// Re-enable it so 'Inspect Element' is reachable when the binary
+		// was built with the devtools tag (make build-dev). The flag is a
+		// no-op without devtools enabled, so it's safe in release builds.
+		EnableDefaultContextMenu: true,
+		Linux:                    &linux.Options{ProgramName: "spk-cockpit", Icon: appfiles.AppIcon},
 		OnStartup:         app.onStartup,
 		OnDomReady: func(ctx context.Context) {
 			if hasPos {
