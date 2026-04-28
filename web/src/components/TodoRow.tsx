@@ -6,15 +6,24 @@ import { TimerBadge } from "./TimerBadge";
 import { renderSmart } from "../lib/smartText";
 import type { TaskPattern } from "../lib/smartText";
 
-// Only High/Urgent actually need the eye-catching edge strip — Normal and
-// Low make up the bulk of cards and a strip on every one would just add
-// noise. The strip uses inline styles so it paints regardless of which
-// color tokens Tailwind has emitted utilities for.
-const priorityColor: Record<number, string | null> = {
+// Every card carries a strip — keeping a uniform left edge avoids the
+// horizontal jitter you'd see if some cards had it and others didn't.
+// Urgent/High keep their loud hues; Normal/Low fall back to the muted
+// subtext color so they read as "no special attention" without looking
+// missing. Inline styles bypass any uncertainty about which Tailwind
+// utilities the build has emitted for our Catppuccin tokens.
+const priorityColor: Record<number, string> = {
   [Priority.Urgent]: "var(--color-urgent)",
   [Priority.High]: "var(--color-high)",
-  [Priority.Normal]: null,
-  [Priority.Low]: null,
+  [Priority.Normal]: "var(--color-fgmute)",
+  [Priority.Low]: "var(--color-low)",
+};
+
+const priorityOpacity: Record<number, number> = {
+  [Priority.Urgent]: 1,
+  [Priority.High]: 1,
+  [Priority.Normal]: 0.55,
+  [Priority.Low]: 0.4,
 };
 
 const priorityLabel: Record<number, string> = {
@@ -69,14 +78,15 @@ export function TodoRow({
     <div className="relative flex items-stretch group">
       {/* Priority accent strip on the left edge — color encodes urgency
           without an extra glyph competing with the title. */}
-      {priorityColor[todo.priority] && (
-        <div
-          className="w-1.5 shrink-0 self-stretch"
-          style={{ backgroundColor: priorityColor[todo.priority]! }}
-          aria-label={`Priority: ${priorityLabel[todo.priority]}`}
-          title={priorityLabel[todo.priority]}
-        />
-      )}
+      <div
+        className="w-1.5 shrink-0 self-stretch"
+        style={{
+          backgroundColor: priorityColor[todo.priority],
+          opacity: priorityOpacity[todo.priority],
+        }}
+        aria-label={`Priority: ${priorityLabel[todo.priority]}`}
+        title={priorityLabel[todo.priority]}
+      />
       <div className="flex-1 min-w-0 px-3 py-2.5 flex flex-col gap-1.5">
         {todo.tags && todo.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
