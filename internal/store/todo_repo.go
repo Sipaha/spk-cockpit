@@ -29,9 +29,9 @@ func (r *TodoRepo) Create(ctx context.Context, t api.Todo) error {
 		t.SortOrder = float64(t.CreatedAt)
 	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO todos(id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, t.ID, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.CreatedAt, t.UpdatedAt, t.DoneAt, t.SortOrder)
+		INSERT INTO todos(id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, t.ID, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.CreatedAt, t.UpdatedAt, t.DoneAt, t.SortOrder, t.DismissedAt)
 	if err != nil {
 		return fmt.Errorf("insert todo: %w", err)
 	}
@@ -41,7 +41,7 @@ func (r *TodoRepo) Create(ctx context.Context, t api.Todo) error {
 // Get returns a non-deleted todo by id, or todo.ErrNotFound.
 func (r *TodoRepo) Get(ctx context.Context, id string) (api.Todo, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
 		FROM todos WHERE id = ? AND deleted_at IS NULL
 	`, id)
 	t, err := scanTodo(row)
@@ -60,7 +60,7 @@ func (r *TodoRepo) Update(ctx context.Context, id string, mutate func(*api.Todo)
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
 		FROM todos WHERE id = ? AND deleted_at IS NULL
 	`, id)
 	t, err := scanTodo(row)
@@ -76,9 +76,9 @@ func (r *TodoRepo) Update(ctx context.Context, id string, mutate func(*api.Todo)
 	}
 
 	_, err = tx.ExecContext(ctx, `
-		UPDATE todos SET title=?, notes=?, priority=?, status=?, due_at=?, updated_at=?, done_at=?, sort_order=?
+		UPDATE todos SET title=?, notes=?, priority=?, status=?, due_at=?, updated_at=?, done_at=?, sort_order=?, dismissed_at=?
 		WHERE id=?
-	`, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.UpdatedAt, t.DoneAt, t.SortOrder, t.ID)
+	`, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.UpdatedAt, t.DoneAt, t.SortOrder, t.DismissedAt, t.ID)
 	if err != nil {
 		return api.Todo{}, fmt.Errorf("update todo: %w", err)
 	}
@@ -112,7 +112,7 @@ func (r *TodoRepo) Restore(ctx context.Context, id string) (api.Todo, error) {
 		return api.Todo{}, todo.ErrNotFound
 	}
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
 		FROM todos WHERE id = ?
 	`, id)
 	return scanTodo(row)
@@ -126,7 +126,7 @@ func (r *TodoRepo) ListDeleted(ctx context.Context, limit int) ([]api.Todo, erro
 		limit = 100
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
 		FROM todos WHERE deleted_at IS NOT NULL
 		ORDER BY deleted_at DESC LIMIT %d
 	`, limit))
@@ -185,7 +185,7 @@ func (r *TodoRepo) List(ctx context.Context, f todo.TodoFilter) ([]api.Todo, err
 		}
 	}
 	//nolint:gosec // all conds are built from safe sources, not user input
-	q := `SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+	q := `SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
 		FROM todos WHERE ` + strings.Join(conds, " AND ") +
 		` ORDER BY status='done' ASC, sort_order DESC, created_at DESC`
 	if f.Limit > 0 {
@@ -215,8 +215,8 @@ func scanTodo(s scanner) (api.Todo, error) {
 	var t api.Todo
 	var prio int
 	var status string
-	var dueAt, doneAt sql.NullInt64
-	if err := s.Scan(&t.ID, &t.Title, &t.Notes, &prio, &status, &dueAt, &t.CreatedAt, &t.UpdatedAt, &doneAt, &t.SortOrder); err != nil {
+	var dueAt, doneAt, dismissedAt sql.NullInt64
+	if err := s.Scan(&t.ID, &t.Title, &t.Notes, &prio, &status, &dueAt, &t.CreatedAt, &t.UpdatedAt, &doneAt, &t.SortOrder, &dismissedAt); err != nil {
 		return api.Todo{}, err
 	}
 	t.Priority = api.Priority(prio)
@@ -228,6 +228,10 @@ func scanTodo(s scanner) (api.Todo, error) {
 	if doneAt.Valid {
 		v := doneAt.Int64
 		t.DoneAt = &v
+	}
+	if dismissedAt.Valid {
+		v := dismissedAt.Int64
+		t.DismissedAt = &v
 	}
 	return t, nil
 }

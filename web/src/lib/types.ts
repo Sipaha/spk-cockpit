@@ -15,6 +15,7 @@ export interface Todo {
   updatedAt: number;
   doneAt?: number;
   sortOrder: number;
+  dismissedAt?: number;
 }
 
 export interface Tag {

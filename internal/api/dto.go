@@ -40,6 +40,10 @@ type Todo struct {
 	// of neighbors when a card is dropped between two existing cards, which
 	// avoids touching unrelated rows on every reorder.
 	SortOrder float64 `json:"sortOrder"`
+	// DismissedAt marks a Done todo as "hidden from the Done column" before
+	// the 3-day cutoff would otherwise hide it. Cleared when the status
+	// changes away from done.
+	DismissedAt *int64 `json:"dismissedAt,omitempty"`
 }
 
 // Tag is a label that can be attached to multiple todos.

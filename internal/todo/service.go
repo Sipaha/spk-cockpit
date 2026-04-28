@@ -132,6 +132,9 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 				t.DoneAt = &doneAt
 			} else {
 				t.DoneAt = nil
+				// Leaving Done re-exposes the card on the board; the
+				// dismiss flag was scoped to the previous Done visit.
+				t.DismissedAt = nil
 			}
 		}
 		if req.DueAt != nil {
@@ -199,6 +202,33 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 		})
 		s.publish(api.EventTodoUpdated, api.TodoUpdatedData{Todo: updated, ChangedFields: changed})
 	}
+	return updated, nil
+}
+
+// DismissDone marks a Done todo as hidden from the kanban board without
+// touching its lifecycle. Errors if the todo isn't in done status. Republishes
+// EventTodoUpdated so subscribers can drop the card immediately.
+func (s *Service) DismissDone(ctx context.Context, id string) (api.Todo, error) {
+	now := s.clock.Now().Unix()
+	updated, err := s.todos.Update(ctx, id, func(t *api.Todo) error {
+		if t.Status != api.StatusDone {
+			return fmt.Errorf("dismiss: todo %s is not in done status", id)
+		}
+		dismissed := now
+		t.DismissedAt = &dismissed
+		t.UpdatedAt = now
+		return nil
+	})
+	if err != nil {
+		return api.Todo{}, err
+	}
+	tags, err := s.tags.GetTodoTags(ctx, id)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("get tags: %w", err)
+	}
+	updated.Tags = tags
+	_ = s.events.Append(ctx, api.TodoEvent{TodoID: id, Kind: "dismissed", At: now})
+	s.publish(api.EventTodoUpdated, api.TodoUpdatedData{Todo: updated, ChangedFields: []string{"dismissedAt"}})
 	return updated, nil
 }
 

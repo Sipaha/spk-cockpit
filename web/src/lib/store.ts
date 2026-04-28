@@ -16,12 +16,15 @@ interface AppState {
 
   tags: Tag[];
 
+  trackerUrlTemplate: string;
+
   load: () => Promise<void>;
   setIncludeDone: (v: boolean) => void;
   loadActiveTimer: () => Promise<void>;
   loadMeetings: (fromUnix: number, toUnix: number) => Promise<void>;
   loadSyncStatus: () => Promise<void>;
   loadTags: () => Promise<void>;
+  loadTrackerTemplate: () => Promise<void>;
   applyEvent: (e: ApiEvent) => void;
 }
 
@@ -35,6 +38,7 @@ export const useTodoStore = create<AppState>((set, get) => ({
   meetingsLoading: false,
   syncStates: [],
   tags: [],
+  trackerUrlTemplate: "",
 
   async load() {
     set({ loading: true, error: null });
@@ -80,6 +84,14 @@ export const useTodoStore = create<AppState>((set, get) => ({
       set({ tags });
     } catch {
       // ignore — UI just shows no colors
+    }
+  },
+  async loadTrackerTemplate() {
+    try {
+      const r = await api.getKv("tracker.url_template");
+      set({ trackerUrlTemplate: r.value ?? "" });
+    } catch {
+      set({ trackerUrlTemplate: "" });
     }
   },
 

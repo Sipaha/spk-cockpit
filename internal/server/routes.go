@@ -19,6 +19,7 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("PATCH /api/todos/{id}", handleUpdateTodo(d))
 	mux.HandleFunc("DELETE /api/todos/{id}", handleDeleteTodo(d))
 	mux.HandleFunc("POST /api/todos/{id}/restore", handleRestoreTodo(d))
+	mux.HandleFunc("POST /api/todos/{id}/dismiss", handleDismissTodo(d))
 	mux.HandleFunc("GET /api/todos/deleted", handleListDeletedTodos(d))
 	mux.HandleFunc("GET /api/todos/{id}/history", handleHistoryTodo(d))
 

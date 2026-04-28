@@ -152,6 +152,22 @@ func handleDeleteTodo(d *Deps) http.HandlerFunc {
 	}
 }
 
+func handleDismissTodo(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		t, err := d.Todos.DismissDone(r.Context(), id)
+		if errors.Is(err, todo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "todo.not_found", "todo not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "todo.dismiss_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, t)
+	}
+}
+
 func handleRestoreTodo(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
