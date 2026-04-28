@@ -23,6 +23,7 @@ import { parseQuickAdd } from "../lib/parser";
 import { Priority } from "../lib/types";
 import { TodoRow } from "./TodoRow";
 import { TodoEditorModal } from "./TodoEditorModal";
+import { UndoToast } from "./UndoToast";
 import type { Todo, TodoStatus } from "../lib/types";
 
 const COLUMNS: { id: TodoStatus; label: string }[] = [
@@ -84,6 +85,7 @@ export function TodoBoard() {
   );
 
   const [modal, setModal] = useState<ModalState>(null);
+  const [undo, setUndo] = useState<Todo | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -162,8 +164,16 @@ export function TodoBoard() {
   }
 
   async function remove(t: Todo) {
-    if (!confirm(`Delete "${t.title}"?`)) return;
     await api.deleteTodo(t.id);
+    setUndo(t);
+  }
+  async function undoDelete(t: Todo) {
+    setUndo(null);
+    try {
+      await api.restoreTodo(t.id);
+    } catch {
+      // ignore — restore failure leaves the toast dismissed; user can find it in Trash
+    }
   }
   async function stopTimer() {
     await api.stopTimer();
@@ -258,8 +268,22 @@ export function TodoBoard() {
           onSave={(title, notes) => saveEdit(modal.todo.id, title, notes)}
         />
       )}
+      {undo && (
+        <UndoToast
+          message={`Deleted "${firstLine(undo.title, 60)}"`}
+          durationMs={6000}
+          onUndo={() => void undoDelete(undo)}
+          onDismiss={() => setUndo(null)}
+        />
+      )}
     </div>
   );
+}
+
+function firstLine(s: string, max: number): string {
+  const nl = s.indexOf("\n");
+  const line = nl === -1 ? s : s.slice(0, nl);
+  return line.length > max ? line.slice(0, max) + "…" : line;
 }
 
 interface ColumnProps {

@@ -37,6 +37,9 @@ export const api = {
     request<Todo>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(req) }),
   deleteTodo: (id: string) =>
     request<void>(`/api/todos/${id}`, { method: "DELETE" }),
+  restoreTodo: (id: string) =>
+    request<Todo>(`/api/todos/${id}/restore`, { method: "POST" }),
+  listDeletedTodos: () => request<Todo[]>(`/api/todos/deleted`),
   startTimer: (todoId: string) =>
     request<TimerSession>("/api/timer/start", {
       method: "POST",

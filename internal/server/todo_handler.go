@@ -154,6 +154,42 @@ func handleDeleteTodo(d *Deps) http.HandlerFunc {
 	}
 }
 
+func handleRestoreTodo(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		t, err := d.Todos.Restore(r.Context(), id)
+		if errors.Is(err, todo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "todo.not_found", "todo not found or not deleted")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "todo.restore_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, t)
+	}
+}
+
+func handleListDeletedTodos(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := 100
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		list, err := d.Todos.ListDeleted(r.Context(), limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "todo.list_deleted_failed", err.Error())
+			return
+		}
+		if list == nil {
+			list = []api.Todo{}
+		}
+		writeJSON(w, http.StatusOK, list)
+	}
+}
+
 func handleHistoryTodo(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

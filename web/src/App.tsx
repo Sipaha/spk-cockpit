@@ -6,6 +6,7 @@ import { Settings } from "./pages/Settings";
 import { Standup } from "./pages/Standup";
 import { MeetingPopup } from "./pages/MeetingPopup";
 import { QuickAddTodo } from "./pages/QuickAddTodo";
+import { Trash } from "./pages/Trash";
 
 export function App() {
   return (
@@ -45,6 +46,7 @@ function MainShell() {
           {navItem("/", "Todos")}
           {navItem("/calendar", "Calendar")}
           {navItem("/standup", "Standup")}
+          {navItem("/trash", "Trash")}
           {navItem("/settings", "Settings")}
         </nav>
       </aside>
@@ -53,6 +55,7 @@ function MainShell() {
           <Route path="/" element={<Todos />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/standup" element={<Standup />} />
+          <Route path="/trash" element={<Trash />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Todos />} />
         </Routes>

@@ -35,6 +35,8 @@ type TodoRepo interface {
 	Get(ctx context.Context, id string) (api.Todo, error)
 	Update(ctx context.Context, id string, mutate func(*api.Todo) error) (api.Todo, error)
 	Delete(ctx context.Context, id string) error
+	Restore(ctx context.Context, id string) (api.Todo, error)
+	ListDeleted(ctx context.Context, limit int) ([]api.Todo, error)
 	List(ctx context.Context, f TodoFilter) ([]api.Todo, error)
 }
 

@@ -78,6 +78,39 @@ func (r *Todo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// Restore clears the soft-delete marker for id.
+func (r *Todo) Restore(_ context.Context, id string) (api.Todo, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.byID[id]
+	if !ok {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	if _, deleted := r.delAt[id]; !deleted {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	delete(r.delAt, id)
+	return t, nil
+}
+
+// ListDeleted returns the deleted todos newest-first (best effort, since we
+// don't track deleted_at timestamps in this fake).
+func (r *Todo) ListDeleted(_ context.Context, limit int) ([]api.Todo, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []api.Todo
+	for id := range r.delAt {
+		if t, ok := r.byID[id]; ok {
+			out = append(out, t)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 // List filters todos in memory the same way the SQLite repo does (status + priority + search; tags handled by domain).
 func (r *Todo) List(_ context.Context, f todo.TodoFilter) ([]api.Todo, error) {
 	r.mu.Lock()

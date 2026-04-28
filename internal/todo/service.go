@@ -213,6 +213,41 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// Restore undoes a soft-delete: deleted_at is cleared and the freshly-restored
+// Todo is published as TodoCreated so subscribers (the React store, the tray
+// state subscriber) can re-add it without needing a separate event type.
+func (s *Service) Restore(ctx context.Context, id string) (api.Todo, error) {
+	t, err := s.todos.Restore(ctx, id)
+	if err != nil {
+		return api.Todo{}, err
+	}
+	tags, err := s.tags.GetTodoTags(ctx, id)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("get tags: %w", err)
+	}
+	t.Tags = tags
+	now := s.clock.Now().Unix()
+	_ = s.events.Append(ctx, api.TodoEvent{TodoID: id, Kind: "restored", At: now})
+	s.publish(api.EventTodoCreated, api.TodoCreatedData{Todo: t})
+	return t, nil
+}
+
+// ListDeleted returns soft-deleted todos with their tags, newest-deleted first.
+func (s *Service) ListDeleted(ctx context.Context, limit int) ([]api.Todo, error) {
+	list, err := s.todos.ListDeleted(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		tags, err := s.tags.GetTodoTags(ctx, list[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("get tags for %s: %w", list[i].ID, err)
+		}
+		list[i].Tags = tags
+	}
+	return list, nil
+}
+
 // List returns todos with their tags loaded.
 func (s *Service) List(ctx context.Context, f TodoFilter) ([]api.Todo, error) {
 	list, err := s.todos.List(ctx, f)

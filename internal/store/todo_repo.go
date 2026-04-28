@@ -101,6 +101,50 @@ func (r *TodoRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// Restore clears deleted_at on a previously soft-deleted todo, returning the
+// freshly-undeleted row. Used by the Revert toast and the Trash page.
+func (r *TodoRepo) Restore(ctx context.Context, id string) (api.Todo, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE todos SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL`, id)
+	if err != nil {
+		return api.Todo{}, fmt.Errorf("restore todo: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return api.Todo{}, todo.ErrNotFound
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+		FROM todos WHERE id = ?
+	`, id)
+	return scanTodo(row)
+}
+
+// ListDeleted returns soft-deleted todos newest-deleted first, capped to limit
+// (defaults to 100 when limit <= 0). Tags aren't joined here — the trash UI
+// only renders title + when-deleted, so we save the per-row query.
+func (r *TodoRepo) ListDeleted(ctx context.Context, limit int) ([]api.Todo, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order
+		FROM todos WHERE deleted_at IS NOT NULL
+		ORDER BY deleted_at DESC LIMIT %d
+	`, limit))
+	if err != nil {
+		return nil, fmt.Errorf("list deleted: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []api.Todo
+	for rows.Next() {
+		t, err := scanTodo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // List returns todos matching the filter, sorted by status (open first), then priority desc, then due_at asc, then created_at desc.
 func (r *TodoRepo) List(ctx context.Context, f todo.TodoFilter) ([]api.Todo, error) {
 	var (
