@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/todo"
@@ -184,5 +186,41 @@ func handleListTags(d *Deps) http.HandlerFunc {
 			tags = []api.Tag{}
 		}
 		writeJSON(w, http.StatusOK, tags)
+	}
+}
+
+func handleUpsertTag(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSpace(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
+			return
+		}
+		var req api.UpsertTagRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		t := api.Tag{Name: name, Color: req.Color, CreatedAt: time.Now().Unix()}
+		if err := d.Tags.Upsert(r.Context(), t); err != nil {
+			writeError(w, http.StatusInternalServerError, "tag.upsert_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, t)
+	}
+}
+
+func handleDeleteTag(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSpace(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
+			return
+		}
+		if err := d.Tags.Delete(r.Context(), name); err != nil {
+			writeError(w, http.StatusInternalServerError, "tag.delete_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }

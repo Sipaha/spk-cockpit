@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
-import type { Todo, ApiEvent, TimerSession, Meeting, SyncStateEntry } from "./types";
+import type { Todo, Tag, ApiEvent, TimerSession, Meeting, SyncStateEntry } from "./types";
 
 interface AppState {
   todos: Todo[];
@@ -14,11 +14,14 @@ interface AppState {
 
   syncStates: SyncStateEntry[];
 
+  tags: Tag[];
+
   load: () => Promise<void>;
   setIncludeDone: (v: boolean) => void;
   loadActiveTimer: () => Promise<void>;
   loadMeetings: (fromUnix: number, toUnix: number) => Promise<void>;
   loadSyncStatus: () => Promise<void>;
+  loadTags: () => Promise<void>;
   applyEvent: (e: ApiEvent) => void;
 }
 
@@ -31,6 +34,7 @@ export const useTodoStore = create<AppState>((set, get) => ({
   meetings: [],
   meetingsLoading: false,
   syncStates: [],
+  tags: [],
 
   async load() {
     set({ loading: true, error: null });
@@ -68,6 +72,14 @@ export const useTodoStore = create<AppState>((set, get) => ({
       set({ syncStates: list });
     } catch {
       // ignore
+    }
+  },
+  async loadTags() {
+    try {
+      const tags = await api.listTags();
+      set({ tags });
+    } catch {
+      // ignore — UI just shows no colors
     }
   },
 

@@ -49,6 +49,11 @@ type Tag struct {
 	CreatedAt int64  `json:"createdAt"`
 }
 
+// UpsertTagRequest is the body of PUT /api/tags/{name}.
+type UpsertTagRequest struct {
+	Color string `json:"color"`
+}
+
 // TodoEvent is an audit-log entry for a todo state transition.
 type TodoEvent struct {
 	ID        int64  `json:"id"`

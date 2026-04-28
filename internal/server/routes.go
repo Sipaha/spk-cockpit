@@ -21,6 +21,8 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("GET /api/todos/{id}/history", handleHistoryTodo(d))
 
 	mux.HandleFunc("GET /api/tags", handleListTags(d))
+	mux.HandleFunc("PUT /api/tags/{name}", handleUpsertTag(d))
+	mux.HandleFunc("DELETE /api/tags/{name}", handleDeleteTag(d))
 	mux.HandleFunc("GET /api/events", handleEvents(d))
 
 	mux.HandleFunc("POST /api/timer/start", handleTimerStart(d))

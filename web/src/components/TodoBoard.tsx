@@ -57,6 +57,7 @@ export function TodoBoard() {
     setIncludeDone,
     activeTimer,
     loadActiveTimer,
+    loadTags,
   } = useTodoStore();
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export function TodoBoard() {
     setIncludeDone(true);
     void load();
     void loadActiveTimer();
+    void loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

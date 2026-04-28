@@ -49,6 +49,13 @@ export const api = {
   todoTime: (id: string, sinceUnix = 0) =>
     request<TodoTimeTotal>(`/api/todos/${id}/time?since=${sinceUnix}`),
   listTags: () => request<Tag[]>("/api/tags"),
+  upsertTag: (name: string, color: string) =>
+    request<Tag>(`/api/tags/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ color }),
+    }),
+  deleteTag: (name: string) =>
+    request<void>(`/api/tags/${encodeURIComponent(name)}`, { method: "DELETE" }),
 
   listMeetings: (fromUnix: number, toUnix: number, includeCancelled = false) =>
     request<Meeting[]>(
