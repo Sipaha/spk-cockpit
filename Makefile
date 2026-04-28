@@ -1,4 +1,4 @@
-.PHONY: build build-fast web-build test test-unit lint fmt tidy clean run licenses
+.PHONY: build build-fast build-dev web-build test test-unit lint fmt tidy clean run licenses
 
 GO ?= go
 BUILD_DIR := build/bin
@@ -9,6 +9,12 @@ build: web-build build-fast
 build-fast:
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build -trimpath -tags "webkit2_41 production" -o $(BIN) ./cmd/cockpit
+
+# build-dev drops the `production` tag so the embedded webkit2gtk shows the
+# Web Inspector on F12 / right-click → Inspect Element. Used by `make run`.
+build-dev:
+	@mkdir -p $(BUILD_DIR)
+	$(GO) build -trimpath -tags "webkit2_41" -o $(BIN) ./cmd/cockpit
 
 web-build:
 	cd web && pnpm install --frozen-lockfile && pnpm build
@@ -33,7 +39,7 @@ tidy:
 clean:
 	rm -rf $(BUILD_DIR) web/dist web/embed/dist
 
-run: build
+run: web-build build-dev
 	$(BIN)
 
 licenses:
