@@ -7,12 +7,13 @@ package caldav
 import (
 	"bytes"
 	"context"
-	"crypto/sha1" //nolint:gosec // sha1 is used only for non-security ctag fingerprinting
-	"encoding/hex"
+	"encoding/xml"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-ical"
@@ -40,21 +41,22 @@ type Client interface {
 type httpClient struct {
 	cfg Config
 	cal *caldav.Client
+	raw *http.Client // used for raw PROPFIND (cs:getctag delta-sync probe)
 }
 
 // NewClient constructs a real CalDAV client. The HTTP transport is wrapped with
 // quoteETagTransport so servers that emit unquoted ETags (Yandex among them)
 // don't trip the strict RFC 7232 parser inside emersion/go-webdav.
 func NewClient(cfg Config) (Client, error) {
-	base := &http.Client{
+	raw := &http.Client{
 		Transport: &quoteETagTransport{inner: http.DefaultTransport},
 	}
-	httpAuth := webdav.HTTPClientWithBasicAuth(base, cfg.Username, cfg.Password)
+	httpAuth := webdav.HTTPClientWithBasicAuth(raw, cfg.Username, cfg.Password)
 	cl, err := caldav.NewClient(httpAuth, cfg.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("caldav client: %w", err)
 	}
-	return &httpClient{cfg: cfg, cal: cl}, nil
+	return &httpClient{cfg: cfg, cal: cl, raw: raw}, nil
 }
 
 // FetchEvents queries the calendar for events in [from, to].
@@ -64,7 +66,25 @@ func NewClient(cfg Config) (Client, error) {
 // when discovery returns nothing or fails — this is the case for Yandex,
 // which does not advertise calendars at the well-known principal location and
 // expects clients to know the events-default URL upfront.
-func (c *httpClient) FetchEvents(ctx context.Context, from, to time.Time, _ string) ([]api.Meeting, string, bool, error) {
+func (c *httpClient) FetchEvents(ctx context.Context, from, to time.Time, prevCTag string) ([]api.Meeting, string, bool, error) {
+	paths := c.discoverCalendarPaths(ctx)
+	slog.Debug("caldav.FetchEvents: discovered paths", "count", len(paths), "paths", paths)
+	if len(paths) == 0 {
+		slog.Debug("caldav.FetchEvents: discovery empty, using BaseURL directly", "url", c.cfg.BaseURL)
+		paths = []string{c.cfg.BaseURL}
+	}
+
+	// Cheap delta-sync probe: PROPFIND cs:getctag for each collection. If the
+	// server returns the same combined CTag we stored last time, nothing in any
+	// collection changed and we can skip the (much heavier) calendar-query
+	// REPORT entirely. Falling back to a full fetch if any collection's CTag is
+	// missing keeps us correct against servers that don't expose getctag.
+	combined := c.combinedCTag(ctx, paths)
+	if combined != "" && combined == prevCTag {
+		slog.Debug("caldav.FetchEvents: ctag unchanged, skipping query", "ctag", combined)
+		return nil, combined, true, nil
+	}
+
 	q := &caldav.CalendarQuery{
 		CompFilter: caldav.CompFilter{
 			Name: ical.CompCalendar,
@@ -74,13 +94,6 @@ func (c *httpClient) FetchEvents(ctx context.Context, from, to time.Time, _ stri
 				End:   to,
 			}},
 		},
-	}
-
-	paths := c.discoverCalendarPaths(ctx)
-	slog.Debug("caldav.FetchEvents: discovered paths", "count", len(paths), "paths", paths)
-	if len(paths) == 0 {
-		slog.Debug("caldav.FetchEvents: discovery empty, using BaseURL directly", "url", c.cfg.BaseURL)
-		paths = []string{c.cfg.BaseURL}
 	}
 
 	var (
@@ -110,13 +123,104 @@ func (c *httpClient) FetchEvents(ctx context.Context, from, to time.Time, _ stri
 			meetings = append(meetings, e)
 		}
 	}
-	slog.Debug("caldav.FetchEvents: total parsed events", "count", len(meetings), "from", from, "to", to)
-	h := sha1.New() //nolint:gosec // non-security use: ctag fingerprint only
-	for _, m := range meetings {
-		_, _ = io.WriteString(h, m.ExternalUID)
-		_, _ = io.WriteString(h, m.ExternalETag)
+	slog.Debug("caldav.FetchEvents: total parsed events", "count", len(meetings), "from", from, "to", to, "ctag", combined)
+	return meetings, combined, false, nil
+}
+
+// combinedCTag returns a stable string representing the union of all
+// collections' CTags. Returns "" when CTag isn't reliably available, which
+// suppresses the delta-sync short-circuit and keeps the full fetch path.
+func (c *httpClient) combinedCTag(ctx context.Context, paths []string) string {
+	if len(paths) == 0 {
+		return ""
 	}
-	return meetings, hex.EncodeToString(h.Sum(nil)), false, nil
+	pairs := make([]string, 0, len(paths))
+	for _, p := range paths {
+		ctag, err := c.getCTag(ctx, p)
+		if err != nil || ctag == "" {
+			slog.Debug("caldav.combinedCTag: missing ctag, falling back to full fetch", "path", p, "err", err)
+			return ""
+		}
+		pairs = append(pairs, p+"="+ctag)
+	}
+	sort.Strings(pairs)
+	return strings.Join(pairs, "\n")
+}
+
+// getCTag issues a PROPFIND Depth: 0 for cs:getctag against a single
+// collection. The Calendar Server extension is the de-facto delta-sync
+// primitive for CalDAV (RFC 6578's sync-collection is technically newer but
+// less universally implemented — Yandex doesn't advertise it). Returns ""
+// without error if the server replies but omits the property.
+func (c *httpClient) getCTag(ctx context.Context, path string) (string, error) {
+	target, err := c.absoluteURL(path)
+	if err != nil {
+		return "", err
+	}
+	body := strings.NewReader(`<?xml version="1.0" encoding="utf-8"?>
+<propfind xmlns="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+  <prop><cs:getctag/></prop>
+</propfind>`)
+	req, err := http.NewRequestWithContext(ctx, "PROPFIND", target, body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Depth", "0")
+	req.Header.Set("Content-Type", "application/xml; charset=utf-8")
+	req.SetBasicAuth(c.cfg.Username, c.cfg.Password)
+
+	resp, err := c.raw.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusMultiStatus && resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("propfind ctag: status %s", resp.Status)
+	}
+
+	var ms struct {
+		XMLName  xml.Name `xml:"DAV: multistatus"`
+		Response []struct {
+			Propstat []struct {
+				Prop struct {
+					CTag string `xml:"http://calendarserver.org/ns/ getctag"`
+				} `xml:"DAV: prop"`
+				Status string `xml:"DAV: status"`
+			} `xml:"DAV: propstat"`
+		} `xml:"DAV: response"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&ms); err != nil {
+		return "", fmt.Errorf("decode multistatus: %w", err)
+	}
+	for _, r := range ms.Response {
+		for _, ps := range r.Propstat {
+			if ps.Prop.CTag != "" {
+				return ps.Prop.CTag, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// absoluteURL turns a discovered collection path (which may be a relative
+// "/calendars/.../events-default/" or already a full URL) into a full URL
+// suitable for a raw PROPFIND request.
+func (c *httpClient) absoluteURL(p string) (string, error) {
+	if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
+		return p, nil
+	}
+	base, err := url.Parse(c.cfg.BaseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse base url: %w", err)
+	}
+	if strings.HasPrefix(p, "/") {
+		base.Path = p
+	} else {
+		base.Path = strings.TrimSuffix(base.Path, "/") + "/" + p
+	}
+	base.RawQuery = ""
+	base.Fragment = ""
+	return base.String(), nil
 }
 
 // discoverCalendarPaths runs FindCalendars and returns the paths of every
@@ -155,6 +259,38 @@ func propString(c *ical.Component, name string) string {
 		return ""
 	}
 	return p.Value
+}
+
+// propText reads a TEXT-typed property and unescapes per RFC 5545 §3.3.11
+// (\\ → \, \; → ;, \, → ,, \n / \N → linebreak). emersion/go-ical leaves the
+// raw escaped value, so meeting Summary/Description/Location pass through
+// unchanged otherwise — including literal "\n" sequences that would otherwise
+// land inside hyperlinks.
+func propText(c *ical.Component, name string) string {
+	return unescapeICalText(propString(c, name))
+}
+
+func unescapeICalText(s string) string {
+	if s == "" {
+		return s
+	}
+	b := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n', 'N':
+				b = append(b, '\n')
+				i++
+				continue
+			case '\\', ',', ';':
+				b = append(b, s[i+1])
+				i++
+				continue
+			}
+		}
+		b = append(b, s[i])
+	}
+	return string(b)
 }
 
 // FakeClient is a test double — call sites set the response and the syncer calls FetchEvents.

@@ -166,9 +166,9 @@ func componentToMeeting(externalUID string, src, timing *ical.Component, from, t
 	return api.Meeting{
 		Source:      api.MeetingSourceCalDAV,
 		ExternalUID: externalUID,
-		Title:       propString(src, ical.PropSummary),
-		Description: propString(src, ical.PropDescription),
-		Location:    propString(src, ical.PropLocation),
+		Title:       propText(src, ical.PropSummary),
+		Description: propText(src, ical.PropDescription),
+		Location:    propText(src, ical.PropLocation),
 		StartAt:     start.Unix(),
 		EndAt:       end.Unix(),
 	}, true
