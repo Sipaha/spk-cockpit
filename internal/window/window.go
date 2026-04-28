@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -24,12 +25,31 @@ import (
 type App struct {
 	ctx        context.Context
 	socketPath string
+
+	geomMu       sync.Mutex
+	lastGeometry *Geometry // last known visible geometry, refreshed by the geometry poller
 }
 
 // NewApp constructs an App. socketPath is where /api/* requests are proxied.
 func NewApp(socketPath string) *App { return &App{socketPath: socketPath} }
 
 func (a *App) onStartup(ctx context.Context) { a.ctx = ctx }
+
+func (a *App) setGeometry(g Geometry) {
+	a.geomMu.Lock()
+	defer a.geomMu.Unlock()
+	a.lastGeometry = &g
+}
+
+func (a *App) getGeometry() *Geometry {
+	a.geomMu.Lock()
+	defer a.geomMu.Unlock()
+	if a.lastGeometry == nil {
+		return nil
+	}
+	g := *a.lastGeometry
+	return &g
+}
 
 // Show brings the main window forward.
 //
@@ -39,9 +59,19 @@ func (a *App) onStartup(ctx context.Context) { a.ctx = ctx }
 // AlwaysOnTop right around WindowShow nudges the WM to actually raise the
 // window and hand it focus, then we drop the flag so it doesn't pin
 // permanently.
+//
+// Re-applies the last seen geometry before showing because GTK can drop
+// the window's position when it's hidden via close-to-tray and re-center
+// it on next show otherwise.
 func (a *App) Show() {
 	if a.ctx == nil {
 		return
+	}
+	if g := a.getGeometry(); g != nil {
+		if g.Width > 0 && g.Height > 0 {
+			wruntime.WindowSetSize(a.ctx, g.Width, g.Height)
+		}
+		wruntime.WindowSetPosition(a.ctx, g.X, g.Y)
 	}
 	wruntime.WindowUnminimise(a.ctx)
 	wruntime.WindowSetAlwaysOnTop(a.ctx, true)
@@ -149,16 +179,53 @@ func Run(assets embed.FS, socketPath string, ready func(*App), loadGeometry func
 			if hasPos {
 				wruntime.WindowSetPosition(ctx, startX, startY)
 			}
+			app.setGeometry(Geometry{X: startX, Y: startY, Width: width, Height: height})
+			// Wails fires no move/resize events on Linux, and OnBeforeClose
+			// doesn't run when HideWindowOnClose hides the window — so poll
+			// the live geometry while the app is up. Keeps Show() able to
+			// restore the user's last visible position even after a close-to-
+			// tray cycle within the same session.
+			go pollGeometry(ctx, app)
 		},
 		OnShutdown: func(ctx context.Context) {
 			if saveGeometry == nil {
 				return
 			}
-			x, y := wruntime.WindowGetPosition(ctx)
-			w, h := wruntime.WindowGetSize(ctx)
-			saveGeometry(Geometry{X: x, Y: y, Width: w, Height: h})
+			g := app.getGeometry()
+			if g == nil {
+				x, y := wruntime.WindowGetPosition(ctx)
+				w, h := wruntime.WindowGetSize(ctx)
+				g = &Geometry{X: x, Y: y, Width: w, Height: h}
+			}
+			saveGeometry(*g)
 		},
 	})
+}
+
+// pollGeometry samples WindowGetPosition/Size every couple of seconds while
+// the window is in a "normal" state (not minimised, not zero-sized — both
+// signals that GTK is between hide/show transitions). The polling interval
+// is short enough that close-to-tray almost always captures the user's
+// most recent placement without burning measurable CPU.
+func pollGeometry(ctx context.Context, app *App) {
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if wruntime.WindowIsMinimised(ctx) {
+				continue
+			}
+			x, y := wruntime.WindowGetPosition(ctx)
+			w, h := wruntime.WindowGetSize(ctx)
+			if w <= 0 || h <= 0 {
+				continue
+			}
+			app.setGeometry(Geometry{X: x, Y: y, Width: w, Height: h})
+		}
+	}
 }
 
 func udsMiddleware(socketPath string) assetserver.Middleware {
