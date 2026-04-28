@@ -60,22 +60,23 @@ func (a *App) getGeometry() *Geometry {
 // window and hand it focus, then we drop the flag so it doesn't pin
 // permanently.
 //
-// Re-applies the last seen geometry before showing because GTK can drop
-// the window's position when it's hidden via close-to-tray and re-center
-// it on next show otherwise.
+// On multi-monitor X11 most WMs ignore gtk_window_move on an unmapped
+// window — so we must show first, then re-apply the last visible
+// geometry to land back on the correct monitor (otherwise close-to-tray
+// snaps the window to the primary display on next open).
 func (a *App) Show() {
 	if a.ctx == nil {
 		return
 	}
+	wruntime.WindowUnminimise(a.ctx)
+	wruntime.WindowShow(a.ctx)
 	if g := a.getGeometry(); g != nil {
 		if g.Width > 0 && g.Height > 0 {
 			wruntime.WindowSetSize(a.ctx, g.Width, g.Height)
 		}
 		wruntime.WindowSetPosition(a.ctx, g.X, g.Y)
 	}
-	wruntime.WindowUnminimise(a.ctx)
 	wruntime.WindowSetAlwaysOnTop(a.ctx, true)
-	wruntime.WindowShow(a.ctx)
 	wruntime.WindowSetAlwaysOnTop(a.ctx, false)
 }
 
@@ -202,11 +203,12 @@ func Run(assets embed.FS, socketPath string, ready func(*App), loadGeometry func
 	})
 }
 
-// pollGeometry samples WindowGetPosition/Size every couple of seconds while
-// the window is in a "normal" state (not minimised, not zero-sized — both
-// signals that GTK is between hide/show transitions). The polling interval
-// is short enough that close-to-tray almost always captures the user's
-// most recent placement without burning measurable CPU.
+// pollGeometry samples WindowGetPosition/Size every couple of seconds and
+// keeps app.lastGeometry fresh so Show() can restore the last-visible
+// placement after a close-to-tray cycle. We have to filter aggressively
+// because Wails gives no "is hidden" signal, and GTK happily reports
+// stale (0,0) coordinates while the window is hidden — which would
+// otherwise overwrite a perfectly good saved position.
 func pollGeometry(ctx context.Context, app *App) {
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
@@ -222,6 +224,15 @@ func pollGeometry(ctx context.Context, app *App) {
 			w, h := wruntime.WindowGetSize(ctx)
 			if w <= 0 || h <= 0 {
 				continue
+			}
+			// (0,0) is the canonical "I don't know" / "window is hidden"
+			// reply on Linux. Drop it whenever we've previously captured a
+			// real position — the user almost certainly didn't deliberately
+			// place the window at the very top-left corner.
+			if x == 0 && y == 0 {
+				if g := app.getGeometry(); g != nil && (g.X != 0 || g.Y != 0) {
+					continue
+				}
 			}
 			app.setGeometry(Geometry{X: x, Y: y, Width: w, Height: h})
 		}
