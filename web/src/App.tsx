@@ -20,11 +20,21 @@ export function App() {
 
 function MainShell() {
   const loc = useLocation();
-  const navItem = (to: string, label: string) => (
-    <Link to={to} className={loc.pathname === to ? "text-fg" : "text-fgmute"}>
-      {label}
-    </Link>
-  );
+  const navItem = (to: string, label: string) => {
+    const active = loc.pathname === to;
+    return (
+      <Link
+        to={to}
+        className={`-mx-2 block rounded px-3 py-2 text-sm transition-colors ${
+          active
+            ? "bg-bgmute text-fg"
+            : "text-fgmute hover:bg-bgmute hover:text-fg"
+        }`}
+      >
+        {label}
+      </Link>
+    );
+  };
   return (
     <div className="min-h-screen flex">
       <aside className="w-48 bg-bgsub border-r border-bgmute p-4">

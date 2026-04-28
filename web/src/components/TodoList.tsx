@@ -31,6 +31,10 @@ export function TodoList() {
     await api.deleteTodo(t.id);
   }
 
+  async function renameTitle(t: Todo, title: string) {
+    await api.updateTodo(t.id, { title });
+  }
+
   async function startTimer(t: Todo) {
     await api.startTimer(t.id);
   }
@@ -67,6 +71,7 @@ export function TodoList() {
             onDelete={remove}
             onStartTimer={startTimer}
             onStopTimer={stopTimer}
+            onRenameTitle={renameTitle}
           />
         ))}
         {!loading && todos.length === 0 && (

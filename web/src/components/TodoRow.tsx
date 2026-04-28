@@ -1,4 +1,5 @@
-import { Check, Trash2, Play, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Pencil, Trash2, Play, Square } from "lucide-react";
 import type { Todo } from "../lib/types";
 import { Priority } from "../lib/types";
 import { TagPill } from "./TagPill";
@@ -25,6 +26,7 @@ export interface TodoRowProps {
   onDelete: (todo: Todo) => void;
   onStartTimer: (todo: Todo) => void;
   onStopTimer: (todo: Todo) => void;
+  onRenameTitle: (todo: Todo, title: string) => void;
 }
 
 export function TodoRow({
@@ -34,9 +36,29 @@ export function TodoRow({
   onDelete,
   onStartTimer,
   onStopTimer,
+  onRenameTitle,
 }: TodoRowProps) {
   const isDone = todo.status === "done";
   const hasTimer = activeTimerStartedAt !== null;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(todo.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(todo.title);
+      // focus + select after the input mounts so Enter-to-save replaces text fast.
+      requestAnimationFrame(() => inputRef.current?.select());
+    }
+  }, [editing, todo.title]);
+
+  function commit() {
+    const next = draft.trim();
+    if (next && next !== todo.title) onRenameTitle(todo, next);
+    setEditing(false);
+  }
+
   return (
     <div className="flex items-center gap-3 p-3 rounded hover:bg-bgsub group">
       <button
@@ -47,15 +69,47 @@ export function TodoRow({
         {isDone && <Check size={14} className="text-bg" />}
       </button>
       <span className={priorityClass[todo.priority]}>{priorityGlyph[todo.priority]}</span>
-      <span className={`flex-1 ${isDone ? "line-through text-fgmute" : ""}`}>
-        {todo.title}
-      </span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(false);
+            }
+          }}
+          className="flex-1 bg-bgsub border border-bgmute rounded px-2 py-1 text-fg focus:outline-none focus:border-accent"
+        />
+      ) : (
+        <span
+          className={`flex-1 cursor-text ${isDone ? "line-through text-fgmute" : ""}`}
+          onDoubleClick={() => setEditing(true)}
+          title="Double-click to edit"
+        >
+          {todo.title}
+        </span>
+      )}
       {hasTimer && <TimerBadge startedAt={activeTimerStartedAt!} />}
       <div className="flex gap-1">
         {(todo.tags ?? []).map((t) => (
           <TagPill key={t} name={t} />
         ))}
       </div>
+      {!editing && (
+        <button
+          onClick={() => setEditing(true)}
+          className="opacity-0 group-hover:opacity-100 text-fgmute hover:text-accent"
+          aria-label="Edit"
+        >
+          <Pencil size={16} />
+        </button>
+      )}
       {hasTimer ? (
         <button
           onClick={() => onStopTimer(todo)}
