@@ -12,9 +12,14 @@ function formatTime(unix: number): string {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-function relTime(unix: number): string {
-  const ms = unix * 1000 - Date.now();
-  if (ms < 0) return "started";
+function relTime(startAt: number, endAt: number): string {
+  const now = Date.now();
+  // Meeting that's already finished — flag it once and stop nagging the
+  // user with a "started" tag that lingers forever.
+  if (endAt * 1000 <= now) return "ended";
+  // Currently happening: between start and end.
+  if (startAt * 1000 <= now) return "now";
+  const ms = startAt * 1000 - now;
   const min = Math.round(ms / 60000);
   if (min < 60) return `in ${min}m`;
   const hr = Math.round(min / 60);
@@ -31,7 +36,9 @@ export function MeetingCard({ meeting, onClick, selected }: MeetingCardProps) {
     <div className={cls} onClick={() => onClick?.(meeting)}>
       <div className="flex items-center justify-between">
         <span className="font-medium">{meeting.title}</span>
-        <span className="text-fgmute text-xs">{relTime(meeting.startAt)}</span>
+        <span className="text-fgmute text-xs">
+          {relTime(meeting.startAt, meeting.endAt)}
+        </span>
       </div>
       <div className="flex items-center gap-3 text-fgmute text-xs">
         <span className="inline-flex items-center gap-1">

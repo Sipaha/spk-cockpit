@@ -23,6 +23,7 @@ import { parseQuickAdd } from "../lib/parser";
 import { Priority } from "../lib/types";
 import { TodoRow } from "./TodoRow";
 import { TodoEditorModal } from "./TodoEditorModal";
+import { TodoViewModal } from "./TodoViewModal";
 import { TagsManager } from "./TagsManager";
 import { UndoToast } from "./UndoToast";
 import type { Todo, TodoStatus } from "../lib/types";
@@ -50,7 +51,11 @@ function bucketize(todos: Todo[]): Buckets {
   return out;
 }
 
-type ModalState = { mode: "new" } | { mode: "edit"; todo: Todo } | null;
+type ModalState =
+  | { mode: "new" }
+  | { mode: "view"; todo: Todo }
+  | { mode: "edit"; todo: Todo }
+  | null;
 
 export function TodoBoard() {
   const {
@@ -188,6 +193,9 @@ export function TodoBoard() {
       // ignore — restore failure leaves the toast dismissed; user can find it in Trash
     }
   }
+  function openView(todo: Todo) {
+    setModal({ mode: "view", todo });
+  }
   function openEdit(todo: Todo) {
     setModal({ mode: "edit", todo });
   }
@@ -228,6 +236,7 @@ export function TodoBoard() {
       activeTimerStartedAt: session ? session.startedAt : null,
       taskPatterns,
       onDelete: remove,
+      onView: openView,
       onEdit: openEdit,
       onHide: t.status === "done" ? hideFromDone : undefined,
     };
@@ -292,6 +301,14 @@ export function TodoBoard() {
           tagSuggestions={tagNames}
           onClose={() => setModal(null)}
           onSave={createFromModal}
+        />
+      )}
+      {modal?.mode === "view" && (
+        <TodoViewModal
+          todo={modal.todo}
+          taskPatterns={taskPatterns}
+          onClose={() => setModal(null)}
+          onEdit={() => setModal({ mode: "edit", todo: modal.todo })}
         />
       )}
       {modal?.mode === "edit" && (

@@ -30,6 +30,7 @@ export interface TodoRowProps {
   activeTimerStartedAt: number | null;
   taskPatterns: TaskPattern[];
   onDelete: (todo: Todo) => void;
+  onView: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
   onHide?: (todo: Todo) => void;
 }
@@ -39,6 +40,7 @@ export function TodoRow({
   activeTimerStartedAt,
   taskPatterns,
   onDelete,
+  onView,
   onEdit,
   onHide,
 }: TodoRowProps) {
@@ -58,9 +60,9 @@ export function TodoRow({
         className="flex-1 min-w-0 cursor-pointer flex flex-col gap-0.5"
         onClick={(e) => {
           e.stopPropagation();
-          onEdit(todo);
+          onView(todo);
         }}
-        title="Click to edit"
+        title="Click to view"
       >
         <div className={`truncate ${isDone ? "line-through text-fgmute" : ""}`}>
           {renderSmart(titleLine, taskPatterns)}
