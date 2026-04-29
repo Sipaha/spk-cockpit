@@ -13,7 +13,7 @@ trap 'rm -f "$GO_FRAGMENT" "$WEB_FRAGMENT"' EXIT
 
 GOMODCACHE="$(go env GOMODCACHE)"
 DEPS_TMP="$(mktemp)"
-go list -deps -tags 'webkit2_41 production' \
+go list -deps -tags 'wails production' \
   -f '{{if .Module}}{{.Module.Path}}@{{.Module.Version}}{{end}}' \
   ./cmd/cockpit 2>/dev/null \
   | sort -u \
