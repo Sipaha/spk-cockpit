@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	if err := cli.Execute(); err != nil {
+	if err := cli.Execute(frontendFS()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

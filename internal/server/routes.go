@@ -1,13 +1,7 @@
 package server
 
 import (
-	"io"
-	"io/fs"
 	"net/http"
-	"strings"
-	"time"
-
-	webembed "github.com/spk/spk-cockpit/web/embed"
 )
 
 func registerRoutes(mux *http.ServeMux, d *Deps) {
@@ -56,44 +50,4 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 
 	mux.HandleFunc("GET /api/kv/{key}", handleGetKv(d))
 	mux.HandleFunc("PUT /api/kv/{key}", handleSetKv(d))
-
-	if dist, err := fs.Sub(webembed.DistFS, "dist"); err == nil {
-		mux.Handle("/", spaFallback(dist))
-	}
-}
-
-func spaFallback(dist fs.FS) http.Handler {
-	fileServer := http.FileServer(http.FS(dist))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Unknown /api/* paths must surface as JSON 404 — falling back to the
-		// SPA's index.html would silently mask client-side typos and confuse
-		// any non-browser caller (CLI, tests, integrations).
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			writeError(w, http.StatusNotFound, "not_found", "unknown route")
-			return
-		}
-		// Strip leading slash for fs.Open
-		clean := strings.TrimPrefix(r.URL.Path, "/")
-		if clean == "" {
-			clean = "index.html"
-		}
-		if f, err := dist.Open(clean); err == nil {
-			_ = f.Close()
-			fileServer.ServeHTTP(w, r)
-			return
-		}
-		// Fall back to index.html for SPA routing
-		idx, err := dist.Open("index.html")
-		if err != nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		defer func() { _ = idx.Close() }()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if seeker, ok := idx.(io.ReadSeeker); ok {
-			http.ServeContent(w, r, "index.html", time.Time{}, seeker)
-			return
-		}
-		_, _ = io.Copy(w, idx)
-	})
 }
