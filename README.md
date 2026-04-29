@@ -11,7 +11,7 @@ Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 - **Calendar** — read-only sync from any CalDAV server (Yandex, Fastmail, iCloud, Nextcloud, Posteo, mailbox.org, …). DBus desktop notifications fire N minutes before each meeting (default 5; per-meeting override) and a separate small popup window opens 1 minute before.
 - **Markdown notes** attached to meetings or todos, with revision history.
 - **Daily standup helper** — auto-aggregates "Yesterday / Today / Blockers" from completed todos, your GitLab commits, and any HTTP-queryable task tracker (configurable URL + token). One-click copy as markdown.
-- **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open standup, stop timer, refresh sync).
+- **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open window, open standup, quick-add todo, stop timer).
 - **Encrypted secrets** — AES-256-GCM with the master key sourced from the OS keyring (libsecret on Linux).
 - **Single self-contained binary** — Go server + embedded React/Vite/Tailwind UI, served over a Unix domain socket. CGO links libgtk-3, libwebkit2gtk-4.1, and libsecret-1 (see Build below). No Docker, no daemon manager other than systemd-user.
 
