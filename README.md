@@ -20,17 +20,17 @@ Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 System dependencies (Ubuntu/Debian):
 
 ```bash
-sudo apt install -y gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libsecret-1-dev
+sudo apt install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libsecret-1-dev
 ```
 
 Then:
 
 ```bash
-make build
+make build         # dev binary with DevTools (recommended for daily use)
 ./build/bin/spk-cockpit
 ```
 
-`make build` uses `-tags "webkit2_41 production"` for webkit2gtk 4.1 compatibility and Wails production mode.
+`make release` produces a stripped production binary at `build/bin/spk-cockpit-release` with DevTools disabled.
 
 To autostart on login, install the systemd-user unit:
 
@@ -125,15 +125,12 @@ The domain layer (`internal/{todo,meeting,timer,note,secret,standup}`) is transp
 ## Development
 
 ```bash
-make test    # Go tests + Vitest
-make lint    # golangci-lint + eslint
+make test    # Go tests (-race, -tags wails) + Vitest
+make lint    # golangci-lint --build-tags wails + eslint
 make fmt
 ```
 
-For frontend hot-reload run `cd web && pnpm dev` — Vite serves the UI directly
-and proxies `/api/*` to the running daemon's Unix socket. The Go binary only
-serves the embedded build in production. To debug Go and JS together with the
-WebKit inspector, run `make run` (devtools-enabled binary).
+For frontend hot-reload run `cd web && pnpm dev` — Vite serves the UI directly and proxies `/api/*` to the running daemon's Unix socket. The Go binary only serves the embedded build. To debug Go and JS together with the WebKit inspector, run `make build` and launch `./build/bin/spk-cockpit` — DevTools (right-click → Inspect Element) are on by default in dev builds and disabled in `make release` builds.
 
 ## License
 

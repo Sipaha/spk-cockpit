@@ -1,49 +1,67 @@
-.PHONY: build build-fast build-dev web-build test test-unit lint fmt tidy clean run licenses
+.PHONY: build build-fast build-desktop release test test-go test-front lint fmt tidy clean run licenses build-frontend
 
-GO ?= go
-BUILD_DIR := build/bin
-BIN := $(BUILD_DIR)/spk-cockpit
+BIN_DIR := build/bin
+BIN     := $(BIN_DIR)/spk-cockpit
+GO      := go
 
-build: web-build build-fast
+# build is the default — produces a dev desktop binary with DevTools enabled.
+build: build-frontend build-desktop
 
-build-fast:
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build -trimpath -tags "webkit2_41 production" -o $(BIN) ./cmd/cockpit
+# build-fast skips the frontend build; useful when only Go changed and
+# cmd/cockpit/dist already has a fresh frontend build.
+build-fast: build-desktop
 
-# build-dev keeps the `production` tag (so Wails uses our embedded webembed.DistFS
-# instead of looking for an on-disk assetdir) and additionally turns on the
-# `devtools` build tag, which Wails's app_devtools.go uses to flip the
-# webkit2gtk Web Inspector on. F12 / right-click → Inspect Element work in
-# this binary. Used by `make run`.
-build-dev:
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build -trimpath -tags "webkit2_41 production devtools" -o $(BIN) ./cmd/cockpit
-
-web-build:
+build-frontend:
 	cd web && pnpm install --frozen-lockfile && pnpm build
-	rm -rf web/embed/dist && cp -r web/dist web/embed/dist
 
-test: test-unit
+# build-desktop produces the dev binary: -tags wails enables the desktop
+# runner, no `production` tag → DevTools enabled (see internal/desktop/devtools_dev.go).
+# The dist/ copy ritual is required so `//go:embed all:dist` in
+# cmd/cockpit/embed.go finds the bundled frontend at compile time.
+build-desktop:
+	mkdir -p $(BIN_DIR)
+	rm -rf cmd/cockpit/dist && cp -r web/dist cmd/cockpit/dist
+	CGO_ENABLED=1 $(GO) build -tags wails -trimpath -ldflags="-w -s" -o $(BIN) ./cmd/cockpit
+	rm -rf cmd/cockpit/dist
+	mkdir -p cmd/cockpit/dist
+	touch cmd/cockpit/dist/.gitkeep
+
+# release builds the desktop binary with the production tag set: DevTools off.
+release: build-frontend
+	mkdir -p $(BIN_DIR)
+	rm -rf cmd/cockpit/dist && cp -r web/dist cmd/cockpit/dist
+	CGO_ENABLED=1 $(GO) build -tags "wails production" -trimpath -ldflags="-w -s" -o $(BIN_DIR)/spk-cockpit-release ./cmd/cockpit
+	rm -rf cmd/cockpit/dist
+	mkdir -p cmd/cockpit/dist
+	touch cmd/cockpit/dist/.gitkeep
+
+# run is dev-mode shorthand: build then exec.
+run: build
+	$(BIN)
+
+test: test-go test-front
+
+test-go:
+	$(GO) test -tags wails -race -timeout 120s ./...
+
+test-front:
 	cd web && pnpm test --run
 
-test-unit:
-	$(GO) test ./internal/...
-
 lint:
-	golangci-lint run
+	golangci-lint run --build-tags wails
 	cd web && pnpm lint
 
 fmt:
 	$(GO) fmt ./...
+	cd web && pnpm prettier -w src
 
 tidy:
 	$(GO) mod tidy
 
 clean:
-	rm -rf $(BUILD_DIR) web/dist web/embed/dist
-
-run: web-build build-dev
-	$(BIN)
+	rm -rf $(BIN_DIR) web/dist cmd/cockpit/dist
+	mkdir -p cmd/cockpit/dist
+	touch cmd/cockpit/dist/.gitkeep
 
 licenses:
 	./scripts/gen-third-party-licenses.sh
