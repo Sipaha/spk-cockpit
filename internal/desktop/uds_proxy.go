@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -43,21 +44,39 @@ func udsMiddleware(socketPath string) application.Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasPrefix(r.URL.Path, "/api/") {
-				next.ServeHTTP(w, r)
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				if r.Body != nil && r.Body != http.NoBody {
+					buf, err := io.ReadAll(r.Body)
+					_ = r.Body.Close()
+					if err != nil {
+						http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+					r.Body = io.NopCloser(bytes.NewReader(buf))
+					r.ContentLength = int64(len(buf))
+				}
+				proxy.ServeHTTP(w, r)
 				return
 			}
-			if r.Body != nil && r.Body != http.NoBody {
-				buf, err := io.ReadAll(r.Body)
-				_ = r.Body.Close()
-				if err != nil {
-					http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
-					return
-				}
-				r.Body = io.NopCloser(bytes.NewReader(buf))
-				r.ContentLength = int64(len(buf))
+			// SPA fallback. v3's AssetFileServerFS has no built-in fallback —
+			// extension-less deep-link paths (/quick-add-todo, /popup-meeting,
+			// /standup, /calendar/...) don't exist as files in the embed and
+			// would 404 with a blank webview. Rewrite the request URL to "/"
+			// so the asset server returns index.html; the webview's address
+			// stays at the original path so React Router renders the matching
+			// route on boot. Real assets (/assets/*.js, *.css, *.png) keep
+			// their path because they have an extension.
+			//
+			// /wails/* is reserved for v3's internal runtime endpoints
+			// (`/wails/runtime` POST handles JS Window.Close/Browser.OpenURL
+			// and friends; `/wails/runtime.js`, `/wails/transport.js` serve
+			// the bundled runtime). Those paths are also extension-less but
+			// MUST NOT be rewritten — `next` runs the v3 transport middleware
+			// chain that consumes them.
+			if r.URL.Path != "/" && path.Ext(r.URL.Path) == "" && !strings.HasPrefix(r.URL.Path, "/wails/") {
+				r.URL.Path = "/"
 			}
-			proxy.ServeHTTP(w, r)
+			next.ServeHTTP(w, r)
 		})
 	}
 }
