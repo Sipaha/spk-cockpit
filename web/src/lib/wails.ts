@@ -1,37 +1,33 @@
 import type { MouseEvent } from "react";
+import * as wails from "@wailsio/runtime";
 
-// The Wails embedded webview injects window.runtime with native-bridge calls.
-// When running outside the bridge (vite dev, a plain browser tab), runtime is
-// undefined; callers degrade gracefully.
-
-interface WailsRuntime {
-  BrowserOpenURL?: (url: string) => void;
-  Quit?: () => void;
+// In Wails v3 the embedded webview's location.protocol is `wails:`. In dev
+// (vite, plain browser tab) it's `http:` and the runtime calls are no-ops or
+// undefined. Detect once and reuse.
+function isWails(): boolean {
+  return typeof window !== "undefined" && window.location.protocol === "wails:";
 }
 
-function bridge(): WailsRuntime | null {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rt = (window as any).runtime as WailsRuntime | undefined;
-  return rt ?? null;
-}
-
-// openExternal routes a URL to the system browser when the Wails bridge is
-// present. In a plain browser tab the regular href follow-through still works,
-// so callers don't need to special-case dev vs production.
+// openExternal routes a URL to the system browser. v3 exposes Browser.OpenURL
+// directly on the runtime module. In a plain browser tab the regular href
+// follow-through still works, so callers don't need to special-case dev vs
+// production.
 export function openExternal(url: string, e?: MouseEvent<HTMLAnchorElement>) {
-  const rt = bridge();
-  if (rt && typeof rt.BrowserOpenURL === "function") {
+  if (isWails() && wails.Browser?.OpenURL) {
     e?.preventDefault();
-    rt.BrowserOpenURL(url);
+    wails.Browser.OpenURL(url);
+    return;
   }
+  // Browser fallback: the anchor's default navigation handles it.
 }
 
-// closeWindow asks Wails to quit the current window's process; falls back to
-// the browser's own window.close() when the bridge is absent.
+// closeWindow asks the current Wails window to close. v3 exposes the active
+// window methods on `wails.Window` (the runtime resolves the active window
+// automatically). Falls back to `window.close()` for a plain browser tab —
+// useful only for the dev server.
 export function closeWindow() {
-  const rt = bridge();
-  if (rt && typeof rt.Quit === "function") {
-    rt.Quit();
+  if (isWails() && wails.Window?.Close) {
+    wails.Window.Close();
     return;
   }
   window.close();
