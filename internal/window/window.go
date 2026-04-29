@@ -59,31 +59,50 @@ func (a *App) getGeometry() *Geometry {
 
 // Show brings the main window forward.
 //
-// Wails v2 has no direct raise/focus runtime call. On Linux/X11
-// WindowShow alone only un-hides the window; if it's already mapped but
-// covered by other windows, the WM keeps it underneath. Toggling
-// AlwaysOnTop right around WindowShow nudges the WM to actually raise the
-// window and hand it focus, then we drop the flag so it doesn't pin
-// permanently.
+// X11 focus-stealing prevention makes this hard: the first gtk_window_present
+// after gtk_widget_show is often dropped by the WM because the window's map
+// hasn't propagated yet, so the focus request can't bind to a "user-input
+// time" hint. The visible symptom is that one tray click un-hides the window
+// underneath other windows; a second click then raises and focuses it.
+//
+// Without a Wails runtime call that exposes gtk_window_present_with_time, the
+// reliable workaround is to issue the show + present sequence twice with a
+// brief gap so the WM finishes mapping the window between attempts. The first
+// pass un-hides; the second pass re-presents on a now-mapped window, which
+// most WMs honour. Both Wails runtime calls are scheduled via g_idle_add on
+// the GTK main thread, so a small sleep on the calling goroutine is what
+// gives the GTK loop time to process the first show before the second pass
+// runs.
 //
 // On multi-monitor X11 most WMs ignore gtk_window_move on an unmapped
-// window — so we must show first, then re-apply the last visible
-// geometry to land back on the correct monitor (otherwise close-to-tray
-// snaps the window to the primary display on next open).
+// window — so we set geometry between the two passes, after the first show
+// has mapped the window, but before the second present steals focus.
+const wmFocusSettle = 80 * time.Millisecond
+
 func (a *App) Show() {
 	if a.ctx == nil {
 		return
 	}
 	a.showMu.Lock()
 	defer a.showMu.Unlock()
+
+	// Pass 1: un-hide and unminimise. This kicks off the WM map.
 	wruntime.WindowUnminimise(a.ctx)
 	wruntime.WindowShow(a.ctx)
+
+	// Geometry restore after show so multi-monitor positions land correctly.
 	if g := a.getGeometry(); g != nil {
 		if g.Width > 0 && g.Height > 0 {
 			wruntime.WindowSetSize(a.ctx, g.Width, g.Height)
 		}
 		wruntime.WindowSetPosition(a.ctx, g.X, g.Y)
 	}
+
+	// Pass 2: after the WM has finished mapping, re-present and toggle
+	// AlwaysOnTop to force a raise. By this point the window is mapped, so
+	// gtk_window_present's focus request is no longer dropped.
+	time.Sleep(wmFocusSettle)
+	wruntime.WindowUnminimise(a.ctx)
 	wruntime.WindowSetAlwaysOnTop(a.ctx, true)
 	wruntime.WindowSetAlwaysOnTop(a.ctx, false)
 }
