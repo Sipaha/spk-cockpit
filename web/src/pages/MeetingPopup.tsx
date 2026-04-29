@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Meeting } from "../lib/types";
 import { linkify } from "../lib/linkify";
+import { closeWindow } from "../lib/wails";
 
 function formatTime(unix: number): string {
   return new Date(unix * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -16,9 +17,10 @@ function relTime(unix: number): string {
   return `in ${hr}h`;
 }
 
-// MeetingPopup is the bare standalone view rendered by the spawned `cockpit popup`
-// subprocess. It carries no sidebar/nav — only the meeting essentials and a
-// Dismiss button that closes the window (and exits the subprocess).
+// MeetingPopup is the bare standalone view rendered in a native v3 child
+// window. It carries no sidebar/nav — only the meeting essentials and a
+// Dismiss button. Esc and the button both call closeWindow() (Wails-aware
+// close that works in the v3 webview where raw window.close() is a no-op).
 export function MeetingPopup() {
   const [params] = useSearchParams();
   const id = params.get("id");
@@ -47,7 +49,17 @@ export function MeetingPopup() {
     };
   }, [id]);
 
-  const dismiss = () => window.close();
+  // Esc closes the popup. The popup has no focused input by default, so
+  // listen at the document level rather than on a specific element.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeWindow();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  const dismiss = () => closeWindow();
 
   return (
     <div className="min-h-screen bg-bg text-fg p-5 flex flex-col">
