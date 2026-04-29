@@ -1,17 +1,5 @@
-import type { MouseEvent, ReactNode } from "react";
-
-// openExternal routes a URL to the system browser. In a Wails webview a plain
-// <a target="_blank"> won't navigate, so we call window.runtime.BrowserOpenURL
-// when the bridge is available; in dev (vite, plain browser) the regular href
-// follow-through still works.
-function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rt = (window as any).runtime;
-  if (rt && typeof rt.BrowserOpenURL === "function") {
-    e.preventDefault();
-    rt.BrowserOpenURL(url);
-  }
-}
+import type { ReactNode } from "react";
+import { openExternal } from "./wails";
 
 // Trailing chars that get glued to URLs by aggressive matching but virtually
 // never belong (sentence-ending punctuation, closing brackets/quotes).

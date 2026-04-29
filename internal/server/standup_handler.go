@@ -13,7 +13,12 @@ func handleStandup(d *Deps) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, "standup.unavailable", "standup service not configured")
 			return
 		}
-		day := time.Now()
+		var day time.Time
+		if d.Clock != nil {
+			day = d.Clock.Now()
+		} else {
+			day = time.Now()
+		}
 		if q := r.URL.Query().Get("date"); q != "" {
 			parsed, err := time.ParseInLocation("2006-01-02", q, time.Local)
 			if err != nil {

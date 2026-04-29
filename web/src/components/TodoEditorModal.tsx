@@ -48,6 +48,9 @@ export function TodoEditorModal({
   const [saving, setSaving] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
+  // Autofocus runs once at mount; we deliberately read initialText only at
+  // open time, so re-running the effect on every keystroke would clobber the
+  // user's caret with the original cursor position.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

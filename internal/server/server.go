@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spk/spk-cockpit/internal/api"
+	"github.com/spk/spk-cockpit/internal/clock"
 	"github.com/spk/spk-cockpit/internal/eventbus"
 	"github.com/spk/spk-cockpit/internal/meeting"
 	"github.com/spk/spk-cockpit/internal/note"
@@ -33,7 +34,7 @@ type Config struct {
 // Deps wires domain services to HTTP handlers. Fields are filled by callers between New() and Serve().
 type Deps struct {
 	Todos    *todo.Service
-	Tags     todo.TagRepo
+	Tags     *todo.TagService
 	Bus      *eventbus.Bus
 	Timer    *timer.Service
 	Meetings *meeting.Service
@@ -42,6 +43,7 @@ type Deps struct {
 	Sync     SyncTrigger
 	Kv       todo.KvRepo
 	Standup  *standup.Service
+	Clock    clock.Clock
 }
 
 // SyncTrigger lets the server force a CalDAV sync from a CLI/UI request.
@@ -87,8 +89,12 @@ func (s *Server) Serve() error {
 	mux := http.NewServeMux()
 	registerRoutes(mux, s.deps)
 	s.httpSrv = &http.Server{
-		Handler:           recoverMW(s.logger, requestLog(s.logger, mux)),
+		// WriteTimeout is intentionally zero so SSE streams can stay open;
+		// per-handler MaxBytesReader caps request bodies on non-streaming routes.
+		Handler:           recoverMW(s.logger, requestLog(s.logger, maxBodyMW(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	err := s.httpSrv.Serve(s.listener)
 	if errors.Is(err, http.ErrServerClosed) {
@@ -100,6 +106,20 @@ func (s *Server) Serve() error {
 // Stop shuts down the HTTP server. Idle connections drain via Shutdown with a
 // tight 200ms deadline; long-lived ones (SSE) are then severed via Close so
 // the tray Quit doesn't hang on subscribers that never disconnect.
+//
+// Shutdown ordering invariant (the daemon's runStart relies on this):
+//
+//  1. cancel(ctx) — wakes goroutines blocked on ctx.Done so they unwind
+//  2. Server.Stop — Shutdown(deadline=200ms) closes idle conns; the deadline
+//     forces SSE handlers (which select on ctx.Done from step 1) to wake and
+//     return. If they don't unwind in time, httpSrv.Close severs them.
+//  3. wait for in-flight publishers (caldav, scheduler, subscribers) to exit
+//     via their tracked WaitGroup — only THEN bus.Close closes subscriber
+//     channels. Reversing this lets Publish race a closed channel.
+//
+// Bus.Publish is internally idempotent on a closed bus, so a stray
+// late publisher is benign — but the WaitGroup keeps shutdown deterministic
+// instead of relying on that safety net.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.httpSrv == nil {
 		return nil

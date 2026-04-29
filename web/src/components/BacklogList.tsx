@@ -5,13 +5,9 @@ import { api } from "../lib/api";
 import { TagPill } from "./TagPill";
 import { renderSmart } from "../lib/smartText";
 import type { Todo } from "../lib/types";
+import { firstLine } from "../lib/textUtils";
 
 const TITLE_MAX = 100;
-function firstLine(s: string): string {
-  const nl = s.indexOf("\n");
-  const line = nl === -1 ? s : s.slice(0, nl);
-  return line.length > TITLE_MAX ? line.slice(0, TITLE_MAX) + "…" : line;
-}
 
 // Renders the list of todos parked in the backlog (status = "backlog") and
 // gives each row a one-click "Promote to To Do" action that flips status
@@ -50,7 +46,7 @@ export function BacklogList() {
           className="flex items-center gap-3 p-2 rounded hover:bg-bgsub group"
         >
           <span className="flex-1 min-w-0 truncate">
-            {renderSmart(firstLine(t.title), taskPatterns)}
+            {renderSmart(firstLine(t.title, TITLE_MAX), taskPatterns)}
           </span>
           <div className="flex gap-1">
             {(t.tags ?? []).map((tag) => (

@@ -71,15 +71,15 @@ func newTestServer(t *testing.T) (string, func()) {
 	srv, err := server.New(server.Config{SocketPath: sock})
 	require.NoError(t, err)
 	tr, gr, er := fakerepo.NewTodo(), fakerepo.NewTag(), fakerepo.NewEvent()
-	bus := eventbus.New(8)
+	bus := eventbus.New()
 	srv.Deps().Todos = todo.NewService(tr, gr, er, clock.NewFake(time.Unix(1700000000, 0)), bus)
-	srv.Deps().Tags = gr
+	srv.Deps().Tags = todo.NewTagService(gr, clock.NewFake(time.Unix(1700000000, 0)), bus)
 	srv.Deps().Bus = bus
 	timerRepo := timerfake.NewTimer()
 	srv.Deps().Timer = timer.NewService(timerRepo, clock.NewFake(time.Unix(1700000000, 0)), bus)
 
 	srv.Deps().Meetings = meeting.NewService(meetingfake.NewMeeting(), clock.NewFake(time.Unix(1700000000, 0)), bus)
-	srv.Deps().Notes = note.NewService(notefake.NewNote(), clock.NewFake(time.Unix(1700000000, 0)), bus)
+	srv.Deps().Notes = note.NewService(notefake.NewNote(), clock.NewFake(time.Unix(1700000000, 0)))
 
 	masterKey := make([]byte, 32)
 	_, _ = rand.Read(masterKey)
@@ -94,6 +94,7 @@ func newTestServer(t *testing.T) (string, func()) {
 	require.NoError(t, store.Migrate(st.DB))
 	t.Cleanup(func() { _ = st.Close() })
 	srv.Deps().Kv = store.NewKvRepo(st.DB)
+	srv.Deps().Clock = clock.NewFake(time.Unix(1700000000, 0))
 
 	go func() { _ = srv.Serve() }()
 	waitForSocket(t, sock)

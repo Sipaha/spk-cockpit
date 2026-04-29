@@ -3,7 +3,6 @@ package fakerepo
 
 import (
 	"context"
-	"sort"
 	"sync"
 
 	"github.com/spk/spk-cockpit/internal/api"
@@ -55,30 +54,6 @@ func (r *Note) Delete(_ context.Context, id string) error {
 	}
 	r.deleted[id] = true
 	return nil
-}
-
-// List filters in memory.
-func (r *Note) List(_ context.Context, f note.NoteFilter) ([]api.Note, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var out []api.Note
-	for id, n := range r.byID {
-		if r.deleted[id] {
-			continue
-		}
-		if f.MeetingID != "" && n.MeetingID != f.MeetingID {
-			continue
-		}
-		if f.TodoID != "" && n.TodoID != f.TodoID {
-			continue
-		}
-		out = append(out, n)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
-	if f.Limit > 0 && len(out) > f.Limit {
-		out = out[:f.Limit]
-	}
-	return out, nil
 }
 
 // FindByAttachment returns the latest note attached to (meetingID, todoID).

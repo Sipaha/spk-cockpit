@@ -17,13 +17,6 @@ type Fake struct {
 // NewFake returns an empty Fake.
 func NewFake() *Fake { return &Fake{} }
 
-// SetItems replaces the canned item list.
-func (f *Fake) SetItems(it []Item) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.items = append([]Item(nil), it...)
-}
-
 // SetError sets a sticky error returned by every AssignedActive call.
 func (f *Fake) SetError(err error) {
 	f.mu.Lock()

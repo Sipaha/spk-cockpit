@@ -19,7 +19,6 @@ import (
 // TodoQuerier is the subset of todo.Service that standup needs.
 type TodoQuerier interface {
 	List(ctx context.Context, f todo.TodoFilter) ([]api.Todo, error)
-	History(ctx context.Context, id string, limit int) ([]api.TodoEvent, error)
 }
 
 // EventLister yields all todo audit events since a given unix-second timestamp.
@@ -64,40 +63,34 @@ func (s *Service) Generate(ctx context.Context, day time.Time) (api.StandupRepor
 		Blockers:  []api.StandupItem{},
 	}
 
-	var (
-		mu   sync.Mutex
-		errs []string
-		wg   sync.WaitGroup
-	)
-	addErr := func(label string, err error) {
-		mu.Lock()
-		errs = append(errs, label+": "+err.Error())
-		mu.Unlock()
+	// Each producer goroutine writes into its OWN result struct so concurrent
+	// fan-out doesn't need a mutex around the report slices and the dependence
+	// on the post-Wait sort is explicit at the type level — the merged output
+	// is unordered until sortByAtDesc runs.
+	type goroutineResult struct {
+		yesterday []api.StandupItem
+		today     []api.StandupItem
+		blockers  []api.StandupItem
+		label     string
+		err       error
 	}
-	addItems := func(section api.StandupSection, items []api.StandupItem) {
+
+	var (
+		mu      sync.Mutex
+		results []goroutineResult
+		wg      sync.WaitGroup
+	)
+	collect := func(r goroutineResult) {
 		mu.Lock()
-		defer mu.Unlock()
-		switch section {
-		case api.StandupSectionYesterday:
-			report.Yesterday = append(report.Yesterday, items...)
-		case api.StandupSectionToday:
-			report.Today = append(report.Today, items...)
-		case api.StandupSectionBlockers:
-			report.Blockers = append(report.Blockers, items...)
-		}
+		results = append(results, r)
+		mu.Unlock()
 	}
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		yest, today, blockers, err := s.todoBuckets(ctx, yStart, dayStart, dayEnd)
-		if err != nil {
-			addErr("todos", err)
-			return
-		}
-		addItems(api.StandupSectionYesterday, yest)
-		addItems(api.StandupSectionToday, today)
-		addItems(api.StandupSectionBlockers, blockers)
+		collect(goroutineResult{yesterday: yest, today: today, blockers: blockers, label: "todos", err: err})
 	}()
 
 	if s.cfg.GitLab != nil && s.cfg.GitLabAuthor != "" {
@@ -105,11 +98,7 @@ func (s *Service) Generate(ctx context.Context, day time.Time) (api.StandupRepor
 		go func() {
 			defer wg.Done()
 			items, err := s.gitlabBucket(ctx, yStart, dayStart)
-			if err != nil {
-				addErr("gitlab", err)
-				return
-			}
-			addItems(api.StandupSectionYesterday, items)
+			collect(goroutineResult{yesterday: items, label: "gitlab", err: err})
 		}()
 	}
 
@@ -118,16 +107,24 @@ func (s *Service) Generate(ctx context.Context, day time.Time) (api.StandupRepor
 		go func() {
 			defer wg.Done()
 			items, err := s.trackerBucket(ctx, yStart, dayStart)
-			if err != nil {
-				addErr("tracker", err)
-				return
-			}
-			addItems(api.StandupSectionYesterday, items)
+			collect(goroutineResult{yesterday: items, label: "tracker", err: err})
 		}()
 	}
 
 	wg.Wait()
 
+	// Merge + sort once. Producer order is non-deterministic; sortByAtDesc
+	// imposes the canonical newest-first order callers expect.
+	var errs []string
+	for _, r := range results {
+		if r.err != nil {
+			errs = append(errs, r.label+": "+r.err.Error())
+			continue
+		}
+		report.Yesterday = append(report.Yesterday, r.yesterday...)
+		report.Today = append(report.Today, r.today...)
+		report.Blockers = append(report.Blockers, r.blockers...)
+	}
 	sortByAtDesc(report.Yesterday)
 	sortByAtDesc(report.Today)
 	sortByAtDesc(report.Blockers)

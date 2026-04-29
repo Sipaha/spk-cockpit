@@ -1,12 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/timer"
@@ -38,7 +37,7 @@ func handleListTodos(d *Deps) http.HandlerFunc {
 			}
 		}
 		if v := q.Get("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				f.Limit = n
 			}
 		}
@@ -95,18 +94,9 @@ func handleUpdateTodo(d *Deps) http.HandlerFunc {
 			return
 		}
 
-		// Snapshot the previous status so the auto-timer hook below can tell
-		// whether this PATCH is an in_progress transition. We can't infer it
-		// from the response alone — req.Status may be a no-op for the same
-		// status the todo already had.
-		var oldStatus api.TodoStatus
-		if req.Status != nil {
-			if prev, err := d.Todos.Get(r.Context(), id); err == nil {
-				oldStatus = prev.Status
-			}
-		}
-
-		t, err := d.Todos.Update(r.Context(), id, req)
+		// Service.Update returns the pre-mutation status atomically with the
+		// row update — no separate pre-flight Get, so no TOCTOU window.
+		t, oldStatus, err := d.Todos.Update(r.Context(), id, req)
 		if errors.Is(err, todo.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "todo.not_found", "todo not found")
 			return
@@ -116,23 +106,33 @@ func handleUpdateTodo(d *Deps) http.HandlerFunc {
 			return
 		}
 
-		// Auto-timer: dragging a card into "In Progress" starts a timer on it;
-		// pulling it out stops only that todo's session. Sibling timers on
-		// other in-progress cards are not touched, so parallel work-in-flight
-		// stays running.
-		if d.Timer != nil && req.Status != nil && oldStatus != t.Status {
-			ctx := r.Context()
-			switch {
-			case t.Status == api.StatusInProgress:
-				_, _ = d.Timer.Start(ctx, t.ID)
-			case oldStatus == api.StatusInProgress:
-				if _, _, err := d.Timer.Stop(ctx, t.ID); err != nil && !errors.Is(err, timer.ErrNoActiveSession) {
-					_ = err
-				}
-			}
-		}
-
+		applyAutoTimer(r.Context(), d, req.Status, oldStatus, t)
 		writeJSON(w, http.StatusOK, t)
+	}
+}
+
+// applyAutoTimer is the shared auto-timer hook: dragging a card into
+// "In Progress" starts a timer on it; pulling it out stops only that todo's
+// session. Sibling timers on other in-progress cards are never touched.
+// statusReq carries the original PATCH/move request's Status field — nil means
+// the caller didn't ask for a status change so the hook is a no-op.
+//
+// We detach from the request context so a client disconnect after the row
+// update commits doesn't leave the UI showing in_progress with no running
+// timer. The detached context still carries values from r.Context() (slog,
+// trace), just not its cancellation signal.
+func applyAutoTimer(ctx context.Context, d *Deps, statusReq *api.TodoStatus, oldStatus api.TodoStatus, t api.Todo) {
+	if d.Timer == nil || statusReq == nil || oldStatus == t.Status {
+		return
+	}
+	bg := context.WithoutCancel(ctx)
+	switch {
+	case t.Status == api.StatusInProgress:
+		_, _ = d.Timer.Start(bg, t.ID)
+	case oldStatus == api.StatusInProgress:
+		if _, _, err := d.Timer.Stop(bg, t.ID); err != nil && !errors.Is(err, timer.ErrNoActiveSession) {
+			_ = err
+		}
 	}
 }
 
@@ -145,16 +145,9 @@ func handleMoveTodo(d *Deps) http.HandlerFunc {
 			return
 		}
 
-		// Snapshot the previous status so the auto-timer hook below can
-		// react to a transition. Same shape as in handleUpdateTodo.
-		var oldStatus api.TodoStatus
-		if req.Status != nil {
-			if prev, err := d.Todos.Get(r.Context(), id); err == nil {
-				oldStatus = prev.Status
-			}
-		}
-
-		t, err := d.Todos.Move(r.Context(), id, req)
+		// Service.Move returns the pre-mutation status atomically with the
+		// move — no separate pre-flight Get, so no TOCTOU window.
+		t, oldStatus, err := d.Todos.Move(r.Context(), id, req)
 		if errors.Is(err, todo.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "todo.not_found", "todo not found")
 			return
@@ -164,20 +157,7 @@ func handleMoveTodo(d *Deps) http.HandlerFunc {
 			return
 		}
 
-		// Auto-timer mirrors the PATCH path — start when entering In Progress,
-		// stop when leaving (only the moved todo's session, never siblings').
-		if d.Timer != nil && req.Status != nil && oldStatus != t.Status {
-			ctx := r.Context()
-			switch {
-			case t.Status == api.StatusInProgress:
-				_, _ = d.Timer.Start(ctx, t.ID)
-			case oldStatus == api.StatusInProgress:
-				if _, _, err := d.Timer.Stop(ctx, t.ID); err != nil && !errors.Is(err, timer.ErrNoActiveSession) {
-					_ = err
-				}
-			}
-		}
-
+		applyAutoTimer(r.Context(), d, req.Status, oldStatus, t)
 		writeJSON(w, http.StatusOK, t)
 	}
 }
@@ -250,27 +230,6 @@ func handleListDeletedTodos(d *Deps) http.HandlerFunc {
 	}
 }
 
-func handleHistoryTodo(d *Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		limit := 100
-		if v := r.URL.Query().Get("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				limit = n
-			}
-		}
-		events, err := d.Todos.History(r.Context(), id, limit)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "todo.history_failed", err.Error())
-			return
-		}
-		if events == nil {
-			events = []api.TodoEvent{}
-		}
-		writeJSON(w, http.StatusOK, events)
-	}
-}
-
 func handleListTags(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tags, err := d.Tags.List(r.Context())
@@ -287,18 +246,17 @@ func handleListTags(d *Deps) http.HandlerFunc {
 
 func handleUpsertTag(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimSpace(r.PathValue("name"))
-		if name == "" {
-			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
-			return
-		}
 		var req api.UpsertTagRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
-		t := api.Tag{Name: name, Color: req.Color, CreatedAt: time.Now().Unix()}
-		if err := d.Tags.Upsert(r.Context(), t); err != nil {
+		t, err := d.Tags.Upsert(r.Context(), r.PathValue("name"), req.Color)
+		if errors.Is(err, todo.ErrTagNameRequired) {
+			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
+			return
+		}
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "tag.upsert_failed", err.Error())
 			return
 		}
@@ -308,22 +266,17 @@ func handleUpsertTag(d *Deps) http.HandlerFunc {
 
 func handleRenameTag(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		oldName := strings.TrimSpace(r.PathValue("name"))
-		if oldName == "" {
-			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
-			return
-		}
 		var req api.RenameTagRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
-		newName := strings.TrimSpace(req.NewName)
-		if newName == "" {
-			writeError(w, http.StatusBadRequest, "bad_request", "newName required")
+		err := d.Tags.Rename(r.Context(), r.PathValue("name"), req.NewName)
+		if errors.Is(err, todo.ErrTagNameRequired) {
+			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
 			return
 		}
-		if err := d.Tags.Rename(r.Context(), oldName, newName); err != nil {
+		if err != nil {
 			writeError(w, http.StatusBadRequest, "tag.rename_failed", err.Error())
 			return
 		}
@@ -333,12 +286,12 @@ func handleRenameTag(d *Deps) http.HandlerFunc {
 
 func handleDeleteTag(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimSpace(r.PathValue("name"))
-		if name == "" {
+		err := d.Tags.Delete(r.Context(), r.PathValue("name"))
+		if errors.Is(err, todo.ErrTagNameRequired) {
 			writeError(w, http.StatusBadRequest, "bad_request", "tag name required")
 			return
 		}
-		if err := d.Tags.Delete(r.Context(), name); err != nil {
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "tag.delete_failed", err.Error())
 			return
 		}

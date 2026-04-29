@@ -1,9 +1,9 @@
 import type {
   Todo, Tag, CreateTodoRequest, UpdateTodoRequest,
-  TimerSession, TodoTimeTotal,
-  Meeting, CreateMeetingRequest, UpdateMeetingRequest,
+  TimerSession,
+  Meeting,
   Note, UpsertNoteRequest,
-  Secret, SyncStateEntry,
+  SyncStateEntry,
   StandupReport,
 } from "./types";
 
@@ -60,11 +60,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ todoId }),
     }),
-  stopAllTimers: () =>
-    request<TimerSession[]>("/api/timer/stop", { method: "POST", body: "{}" }),
   activeTimers: () => request<TimerSession[]>("/api/timer/active"),
-  todoTime: (id: string, sinceUnix = 0) =>
-    request<TodoTimeTotal>(`/api/todos/${id}/time?since=${sinceUnix}`),
   listTags: () => request<Tag[]>("/api/tags"),
   upsertTag: (name: string, color: string) =>
     request<Tag>(`/api/tags/${encodeURIComponent(name)}`, {
@@ -83,28 +79,15 @@ export const api = {
     request<Meeting[]>(
       `/api/meetings?from=${fromUnix}&to=${toUnix}${includeCancelled ? "&includeCancelled=1" : ""}`,
     ),
-  nextMeeting: () => request<Meeting | null>("/api/meetings/next"),
-  createMeeting: (req: CreateMeetingRequest) =>
-    request<Meeting>("/api/meetings", { method: "POST", body: JSON.stringify(req) }),
-  updateMeeting: (id: string, req: UpdateMeetingRequest) =>
-    request<Meeting>(`/api/meetings/${id}`, { method: "PATCH", body: JSON.stringify(req) }),
-  deleteMeeting: (id: string) =>
-    request<void>(`/api/meetings/${id}`, { method: "DELETE" }),
   meetingNote: (id: string) => request<Note | null>(`/api/meetings/${id}/note`),
   upsertNote: (req: UpsertNoteRequest) =>
     request<Note>("/api/notes", { method: "PUT", body: JSON.stringify(req) }),
-  deleteNote: (id: string) =>
-    request<void>(`/api/notes/${id}`, { method: "DELETE" }),
-  todoNote: (id: string) => request<Note | null>(`/api/todos/${id}/note`),
 
-  listSecrets: () => request<Secret[]>("/api/secrets"),
   setSecret: (name: string, value: string) =>
     request<void>(`/api/secrets/${encodeURIComponent(name)}`, {
       method: "PUT",
       body: JSON.stringify({ value }),
     }),
-  deleteSecret: (name: string) =>
-    request<void>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
 
   syncStatus: () => request<SyncStateEntry[]>("/api/sync"),
   triggerSync: (source: string) =>

@@ -10,9 +10,7 @@ import (
 
 // Domain errors.
 var (
-	ErrNotFound      = errors.New("todo: not found")
-	ErrTagNotFound   = errors.New("todo: tag not found")
-	ErrInvalidStatus = errors.New("todo: invalid status transition")
+	ErrNotFound = errors.New("todo: not found")
 )
 
 // TodoFilter controls TodoRepo.List.
@@ -40,9 +38,10 @@ type TodoRepo interface {
 	List(ctx context.Context, f TodoFilter) ([]api.Todo, error)
 	// MoveAndReorder applies `mutate` to one primary todo (same shape as
 	// Update) and bulk-rewrites sort_order on the listed siblings, all in
-	// one transaction. Used by Service.Move so a column rebalance and the
-	// triggering move never split into separate writes.
-	MoveAndReorder(ctx context.Context, primaryID string, mutate func(*api.Todo) error, siblings []SortOrderUpdate) (api.Todo, error)
+	// one transaction. Returns the primary plus the siblings actually
+	// rewritten (read fresh inside the same tx) so callers can publish
+	// events without a post-commit Get loop.
+	MoveAndReorder(ctx context.Context, primaryID string, mutate func(*api.Todo) error, siblings []SortOrderUpdate) (api.Todo, []api.Todo, error)
 }
 
 // SortOrderUpdate is a small (id, sortOrder) tuple consumed by

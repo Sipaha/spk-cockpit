@@ -47,26 +47,3 @@ func (r *SyncStateRepo) Save(ctx context.Context, e api.SyncStateEntry) error {
 	}
 	return nil
 }
-
-// List returns all sync state entries.
-func (r *SyncStateRepo) List(ctx context.Context) ([]api.SyncStateEntry, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT source, cursor, last_ok_at, last_err FROM sync_state ORDER BY source`)
-	if err != nil {
-		return nil, fmt.Errorf("list sync_state: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var out []api.SyncStateEntry
-	for rows.Next() {
-		var e api.SyncStateEntry
-		var lastOk sql.NullInt64
-		if err := rows.Scan(&e.Source, &e.Cursor, &lastOk, &e.LastErr); err != nil {
-			return nil, err
-		}
-		if lastOk.Valid {
-			v := lastOk.Int64
-			e.LastOkAt = &v
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
-}

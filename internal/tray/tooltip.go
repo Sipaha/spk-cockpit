@@ -139,15 +139,21 @@ func (s *Subscriber) refreshMeeting() {
 }
 
 func (s *Subscriber) refreshOverdue(ctx context.Context) {
+	// Snapshot the dependency under the lock, then release it before doing the
+	// SQL roundtrip — concurrent handleEvent calls would otherwise queue up
+	// behind a slow DB query. Re-acquire only to mutate s.state.
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.todos == nil {
+	todos := s.todos
+	s.mu.Unlock()
+	if todos == nil {
+		s.mu.Lock()
 		s.state.Overdue = 0
+		s.mu.Unlock()
 		return
 	}
 	now := time.Now().Unix()
 	count := 0
-	list, err := s.todos.List(ctx, todo.TodoFilter{
+	list, err := todos.List(ctx, todo.TodoFilter{
 		Statuses:   []api.TodoStatus{api.StatusOpen, api.StatusInProgress},
 		Priorities: []api.Priority{api.PriorityHigh, api.PriorityUrgent},
 	})
@@ -159,7 +165,9 @@ func (s *Subscriber) refreshOverdue(ctx context.Context) {
 			count++
 		}
 	}
+	s.mu.Lock()
 	s.state.Overdue = count
+	s.mu.Unlock()
 }
 
 func (s *Subscriber) refreshTimerLabel(ctx context.Context) {

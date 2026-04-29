@@ -60,39 +60,6 @@ func (r *NoteRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// List filters notes by attachment.
-func (r *NoteRepo) List(ctx context.Context, f note.NoteFilter) ([]api.Note, error) {
-	q := `SELECT id, COALESCE(meeting_id,''), COALESCE(todo_id,''), body, created_at, updated_at
-	      FROM notes WHERE deleted_at IS NULL`
-	var args []any
-	if f.MeetingID != "" {
-		q += ` AND meeting_id = ?`
-		args = append(args, f.MeetingID)
-	}
-	if f.TodoID != "" {
-		q += ` AND todo_id = ?`
-		args = append(args, f.TodoID)
-	}
-	q += ` ORDER BY updated_at DESC`
-	if f.Limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", f.Limit) //nolint:gosec // controlled int
-	}
-	rows, err := r.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list notes: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var out []api.Note
-	for rows.Next() {
-		n, err := scanNote(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, n)
-	}
-	return out, rows.Err()
-}
-
 // FindByAttachment returns the (single) note attached to the given meeting OR todo.
 func (r *NoteRepo) FindByAttachment(ctx context.Context, meetingID, todoID string) (api.Note, error) {
 	if meetingID == "" && todoID == "" {

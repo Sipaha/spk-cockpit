@@ -22,7 +22,7 @@ type Syncer struct {
 	state     meeting.SyncStateRepo
 	clock     clock.Clock
 	logger    *slog.Logger
-	bus       eventPublisher
+	bus       api.EventPublisher
 	interval  time.Duration
 	rangeBack time.Duration
 	rangeFwd  time.Duration
@@ -34,10 +34,6 @@ type Syncer struct {
 	lastOkAt *int64
 }
 
-type eventPublisher interface {
-	Publish(api.Event)
-}
-
 // SyncerConfig configures a Syncer.
 type SyncerConfig struct {
 	Client       Client
@@ -45,7 +41,7 @@ type SyncerConfig struct {
 	State        meeting.SyncStateRepo
 	Clock        clock.Clock
 	Logger       *slog.Logger
-	Bus          eventPublisher
+	Bus          api.EventPublisher
 	Interval     time.Duration
 	RangeBack    time.Duration
 	RangeForward time.Duration

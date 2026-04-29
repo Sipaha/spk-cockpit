@@ -103,12 +103,14 @@ func (r *TodoRepo) Delete(ctx context.Context, id string) error {
 
 // MoveAndReorder updates the primary todo via mutate (same contract as
 // Update) and rewrites sort_order on the supplied siblings, all in a single
-// transaction. Used by Service.Move so a "drag with column rebalance" lands
-// as one atomic write.
-func (r *TodoRepo) MoveAndReorder(ctx context.Context, primaryID string, mutate func(*api.Todo) error, siblings []todo.SortOrderUpdate) (api.Todo, error) {
+// transaction. Returns the post-update primary plus a slice of the siblings
+// that were actually rewritten, read fresh inside the same tx — callers
+// should publish events from this slice rather than re-fetching, so a
+// concurrent soft-delete can't make a sibling vanish between commit and read.
+func (r *TodoRepo) MoveAndReorder(ctx context.Context, primaryID string, mutate func(*api.Todo) error, siblings []todo.SortOrderUpdate) (api.Todo, []api.Todo, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return api.Todo{}, fmt.Errorf("begin tx: %w", err)
+		return api.Todo{}, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -118,20 +120,21 @@ func (r *TodoRepo) MoveAndReorder(ctx context.Context, primaryID string, mutate 
 	`, primaryID)
 	t, err := scanTodo(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return api.Todo{}, todo.ErrNotFound
+		return api.Todo{}, nil, todo.ErrNotFound
 	}
 	if err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, nil, err
 	}
 	if err := mutate(&t); err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE todos SET title=?, notes=?, priority=?, status=?, due_at=?, updated_at=?, done_at=?, sort_order=?, dismissed_at=?
 		WHERE id=?
 	`, t.Title, t.Notes, int(t.Priority), string(t.Status), t.DueAt, t.UpdatedAt, t.DoneAt, t.SortOrder, t.DismissedAt, t.ID); err != nil {
-		return api.Todo{}, fmt.Errorf("update primary: %w", err)
+		return api.Todo{}, nil, fmt.Errorf("update primary: %w", err)
 	}
+	updatedSiblings := make([]api.Todo, 0, len(siblings))
 	for _, s := range siblings {
 		if s.ID == primaryID {
 			continue
@@ -139,13 +142,29 @@ func (r *TodoRepo) MoveAndReorder(ctx context.Context, primaryID string, mutate 
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE todos SET sort_order=?, updated_at=? WHERE id=? AND deleted_at IS NULL`,
 			s.SortOrder, t.UpdatedAt, s.ID); err != nil {
-			return api.Todo{}, fmt.Errorf("update sibling %s: %w", s.ID, err)
+			return api.Todo{}, nil, fmt.Errorf("update sibling %s: %w", s.ID, err)
 		}
+		// Read the sibling back fresh — concurrent updates from another tx
+		// can't slip between this read and the commit because we hold the row
+		// lock from the UPDATE above.
+		row := tx.QueryRowContext(ctx, `
+			SELECT id, title, notes, priority, status, due_at, created_at, updated_at, done_at, sort_order, dismissed_at
+			FROM todos WHERE id = ? AND deleted_at IS NULL
+		`, s.ID)
+		sib, err := scanTodo(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			// Sibling was soft-deleted concurrently — drop from the published set.
+			continue
+		}
+		if err != nil {
+			return api.Todo{}, nil, fmt.Errorf("re-read sibling %s: %w", s.ID, err)
+		}
+		updatedSiblings = append(updatedSiblings, sib)
 	}
 	if err := tx.Commit(); err != nil {
-		return api.Todo{}, fmt.Errorf("commit tx: %w", err)
+		return api.Todo{}, nil, fmt.Errorf("commit tx: %w", err)
 	}
-	return t, nil
+	return t, updatedSiblings, nil
 }
 
 // Restore clears deleted_at on a previously soft-deleted todo, returning the

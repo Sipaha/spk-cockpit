@@ -11,8 +11,6 @@ const (
 	EventMeetingUpserted          = "meeting.upserted"
 	EventMeetingDeleted           = "meeting.deleted"
 	EventMeetingNotificationFired = "meeting.notification_fired"
-	EventMeetingPopupRequested    = "meeting.popup_requested"
-	EventNoteUpserted             = "note.upserted"
 	EventSyncStateChanged         = "sync.state_changed"
 )
 
@@ -20,6 +18,13 @@ const (
 type Event struct {
 	Type string `json:"type"`
 	Data any    `json:"data"`
+}
+
+// EventPublisher publishes domain events to subscribers. Lives in api so
+// every domain service can depend on it without pulling in the eventbus
+// implementation. The eventbus.Bus type satisfies this contract.
+type EventPublisher interface {
+	Publish(Event)
 }
 
 // TodoCreatedData is the payload of EventTodoCreated.
@@ -74,19 +79,6 @@ type MeetingDeletedData struct {
 type MeetingNotificationFiredData struct {
 	MeetingID string `json:"meetingId"`
 	FiredAt   int64  `json:"firedAt"`
-}
-
-// MeetingPopupRequestedData is the payload of EventMeetingPopupRequested.
-type MeetingPopupRequestedData struct {
-	MeetingID string `json:"meetingId"`
-	FiredAt   int64  `json:"firedAt"`
-}
-
-// NoteUpsertedData is the payload of EventNoteUpserted.
-type NoteUpsertedData struct {
-	NoteID    string `json:"noteId"`
-	MeetingID string `json:"meetingId,omitempty"`
-	TodoID    string `json:"todoId,omitempty"`
 }
 
 // SyncStateChangedData is the payload of EventSyncStateChanged.

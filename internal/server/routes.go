@@ -22,7 +22,6 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("POST /api/todos/{id}/restore", handleRestoreTodo(d))
 	mux.HandleFunc("POST /api/todos/{id}/dismiss", handleDismissTodo(d))
 	mux.HandleFunc("GET /api/todos/deleted", handleListDeletedTodos(d))
-	mux.HandleFunc("GET /api/todos/{id}/history", handleHistoryTodo(d))
 
 	mux.HandleFunc("GET /api/tags", handleListTags(d))
 	mux.HandleFunc("PUT /api/tags/{name}", handleUpsertTag(d))
@@ -33,8 +32,6 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 	mux.HandleFunc("POST /api/timer/start", handleTimerStart(d))
 	mux.HandleFunc("POST /api/timer/stop", handleTimerStop(d))
 	mux.HandleFunc("GET /api/timer/active", handleTimerActive(d))
-	mux.HandleFunc("GET /api/todos/{id}/time", handleTodoTime(d))
-	mux.HandleFunc("GET /api/todos/{id}/sessions", handleTodoTimerSessions(d))
 
 	mux.HandleFunc("GET /api/meetings", handleListMeetings(d))
 	mux.HandleFunc("POST /api/meetings", handleCreateMeeting(d))
@@ -68,6 +65,13 @@ func registerRoutes(mux *http.ServeMux, d *Deps) {
 func spaFallback(dist fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(dist))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Unknown /api/* paths must surface as JSON 404 — falling back to the
+		// SPA's index.html would silently mask client-side typos and confuse
+		// any non-browser caller (CLI, tests, integrations).
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeError(w, http.StatusNotFound, "not_found", "unknown route")
+			return
+		}
 		// Strip leading slash for fs.Open
 		clean := strings.TrimPrefix(r.URL.Path, "/")
 		if clean == "" {

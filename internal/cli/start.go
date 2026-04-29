@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,7 +11,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -71,8 +72,12 @@ func runStart(ctx context.Context) error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
-	bus := eventbus.New(64)
-	defer bus.Close()
+	bus := eventbus.New()
+	// publisherWg tracks goroutines that may call bus.Publish (scheduler,
+	// caldav syncer, HTTP handlers). bus.Close must run AFTER these unwind,
+	// otherwise a late Publish races a closed channel — relying on the
+	// idempotent-on-closed-bus guard rather than ordering.
+	var publisherWg sync.WaitGroup
 
 	todoRepo := store.NewTodoRepo(st.DB)
 	tagRepo := store.NewTagRepo(st.DB)
@@ -87,7 +92,7 @@ func runStart(ctx context.Context) error {
 		return fmt.Errorf("server: %w", err)
 	}
 	srv.Deps().Todos = todoSvc
-	srv.Deps().Tags = tagRepo
+	srv.Deps().Tags = todo.NewTagService(tagRepo, clock.Real(), bus)
 	srv.Deps().Bus = bus
 	srv.Deps().Timer = timerSvc
 
@@ -97,7 +102,7 @@ func runStart(ctx context.Context) error {
 	syncStateRepo := store.NewSyncStateRepo(st.DB)
 
 	meetingSvc := meeting.NewService(meetingRepo, clock.Real(), bus)
-	noteSvc := note.NewService(noteRepo, clock.Real(), bus)
+	noteSvc := note.NewService(noteRepo, clock.Real())
 
 	masterKey, err := secret.ResolveOrFallback(secret.NewKeyringResolver(), secret.NewEnvResolver(""))
 	if err != nil {
@@ -108,15 +113,16 @@ func runStart(ctx context.Context) error {
 		return fmt.Errorf("secret service: %w", err)
 	}
 
+	kv := store.NewKvRepo(st.DB)
 	srv.Deps().Meetings = meetingSvc
 	srv.Deps().Notes = noteSvc
 	srv.Deps().Secrets = secretSvc
-	srv.Deps().Kv = store.NewKvRepo(st.DB)
+	srv.Deps().Kv = kv
+	srv.Deps().Clock = clock.Real()
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	kv := store.NewKvRepo(st.DB)
 	gitlabSrc := buildGitLabSource(ctx, kv, secretSvc, logger)
 	trackerSrc := buildTrackerSource(ctx, kv, secretSvc, logger)
 	glAuthor, _, _ := kv.Get(ctx, "gitlab.author_username")
@@ -147,7 +153,7 @@ func runStart(ctx context.Context) error {
 		if caldavSyncer != nil {
 			return caldavSyncer
 		}
-		cfg := loadCaldavConfig(secretSvc, st.DB)
+		cfg := loadCaldavConfig(secretSvc, kv)
 		if cfg == nil {
 			return nil
 		}
@@ -164,7 +170,11 @@ func runStart(ctx context.Context) error {
 			Logger:   logger,
 			Bus:      bus,
 		})
-		go s.Run(ctx)
+		publisherWg.Add(1)
+		go func() {
+			defer publisherWg.Done()
+			s.Run(ctx)
+		}()
 		caldavSyncer = s
 		logger.Info("caldav syncer initialized")
 		return s
@@ -183,13 +193,13 @@ func runStart(ctx context.Context) error {
 	defer func() { _ = notifier.Close() }()
 
 	defaultNotifyMin := 5
-	if v, ok, _ := store.NewKvRepo(st.DB).Get(ctx, "meeting.default_notify_min"); ok {
+	if v, ok, _ := kv.Get(ctx, "meeting.default_notify_min"); ok {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			defaultNotifyMin = n
 		}
 	}
 	defaultPopupMin := 1
-	if v, ok, _ := store.NewKvRepo(st.DB).Get(ctx, "meeting.default_popup_min"); ok {
+	if v, ok, _ := kv.Get(ctx, "meeting.default_popup_min"); ok {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			defaultPopupMin = n
 		}
@@ -216,14 +226,22 @@ func runStart(ctx context.Context) error {
 		DefaultNotifyMin: defaultNotifyMin,
 		DefaultPopupMin:  defaultPopupMin,
 	})
-	go scheduler.Run(ctx)
+	publisherWg.Add(1)
+	go func() {
+		defer publisherWg.Done()
+		scheduler.Run(ctx)
+	}()
 
 	// winApp is bound by window.Run below; tray click handlers reference it via
-	// closure so they pick up the live handle once the window is up.
-	var winApp *window.App
-	// trayBackend is declared up-front so the shutdown goroutine (defined before
-	// the tray action wiring) can call into it via closure.
-	var trayBackend tray.Backend
+	// closure so they pick up the live handle once the window is up. The
+	// atomic.Pointer guards against the race between the Wails OnStartup
+	// goroutine that publishes the handle and tray click goroutines that read it.
+	var winApp atomic.Pointer[window.App]
+	// trayBackend must be initialised before the shutdown goroutine reads it,
+	// otherwise SIGTERM can race the main-goroutine assignment that happens
+	// later. Use atomic.Pointer so writes from the main goroutine and reads
+	// from the shutdown goroutine are ordered without an explicit lock.
+	var trayBackend atomic.Pointer[tray.Backend]
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -234,13 +252,22 @@ func runStart(ctx context.Context) error {
 	go func() { //nolint:gosec // context.Background is intentional: Stop needs its own deadline, not the cancelled request ctx
 		<-ctx.Done()
 		logger.Info("shutting down")
-		// Kick off Wails and tray teardown in parallel with the HTTP shutdown so
-		// the user-perceived Quit latency is just whichever is slowest, not their sum.
-		if winApp != nil {
-			winApp.Quit()
+		// If SIGTERM arrives before Wails has finished startup, winApp is
+		// still nil. Poll briefly so we don't hang in window.Run waiting for
+		// the user to close the window manually.
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if w := winApp.Load(); w != nil {
+				w.Quit()
+				break
+			}
+			if time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
-		if trayBackend != nil {
-			trayBackend.Quit()
+		if tb := trayBackend.Load(); tb != nil {
+			(*tb).Quit()
 		}
 		_ = srv.Stop(context.Background())
 	}()
@@ -249,13 +276,13 @@ func runStart(ctx context.Context) error {
 	// winApp is shared with the popup callback above (declared near the scheduler).
 	trayActions := tray.Actions{
 		OpenWindow: func() {
-			if winApp != nil {
-				winApp.Show()
+			if w := winApp.Load(); w != nil {
+				w.Show()
 			}
 		},
 		OpenStandup: func() {
-			if winApp != nil {
-				winApp.ShowAt("/standup")
+			if w := winApp.Load(); w != nil {
+				w.ShowAt("/standup")
 			}
 		},
 		StopTimer: func() {
@@ -285,17 +312,18 @@ func runStart(ctx context.Context) error {
 			go func() { _ = cmd.Wait() }()
 		},
 		OpenMeeting: func(id string) {
-			if winApp != nil {
-				winApp.ShowAt("/calendar?focus=" + id)
+			if w := winApp.Load(); w != nil {
+				w.ShowAt("/calendar?focus=" + id)
 			}
 		},
 		Quit: func() {
 			cancel()
 		},
 	}
-	trayBackend = tray.New(trayActions)
+	tb := tray.New(trayActions)
+	trayBackend.Store(&tb)
 	go func() {
-		trayBackend.Run(nil, nil)
+		tb.Run(nil, nil)
 	}()
 	mtgFetch := func() *api.Meeting {
 		m, err := meetingSvc.Next(context.Background())
@@ -304,11 +332,10 @@ func runStart(ctx context.Context) error {
 		}
 		return m
 	}
-	go tray.NewSubscriber(bus, trayBackend, todoSvc, mtgFetch).Run(ctx)
+	go tray.NewSubscriber(bus, tb, todoSvc, mtgFetch).Run(ctx)
 
-	geomKv := store.NewKvRepo(st.DB)
 	loadGeometry := func() *window.Geometry {
-		v, ok, err := geomKv.Get(context.Background(), "window.geometry")
+		v, ok, err := kv.Get(context.Background(), "window.geometry")
 		if err != nil || !ok || v == "" {
 			return nil
 		}
@@ -323,34 +350,41 @@ func runStart(ctx context.Context) error {
 		if err != nil {
 			return
 		}
-		if err := geomKv.Set(context.Background(), "window.geometry", string(b)); err != nil {
+		if err := kv.Set(context.Background(), "window.geometry", string(b)); err != nil {
 			logger.Warn("save window geometry failed", "err", err)
 		}
 	}
 
 	// Wails owns the main thread.
 	winErr := window.Run(webembed.DistFS, p.SocketFile, func(a *window.App) {
-		winApp = a
+		winApp.Store(a)
 	}, loadGeometry, saveGeometry)
 	logger.Info("window closed", "err", winErr)
 
+	// Ordered shutdown (matches the invariant documented on Server.Stop):
+	//   cancel ctx → drain HTTP → wait for publishers → close bus.
+	// The dedicated shutdown goroutine fired by ctx.Done already kicked off
+	// srv.Stop and tray Quit; calling them again here is idempotent and
+	// ensures we don't return before they've finished.
 	cancel()
 	_ = srv.Stop(context.Background())
 	if err := <-serveErr; err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
+	publisherWg.Wait()
+	bus.Close()
 	return winErr
 }
 
 // loadCaldavConfig reads CalDAV credentials from the KV store and secret service.
 // Returns nil if any required value is missing or an error occurs.
-func loadCaldavConfig(secrets *secret.Service, db *sql.DB) *caldav.Config {
+func loadCaldavConfig(secrets *secret.Service, kv todo.KvRepo) *caldav.Config {
 	ctx := context.Background()
-	url, _, err := store.NewKvRepo(db).Get(ctx, "caldav.url")
+	url, _, err := kv.Get(ctx, "caldav.url")
 	if err != nil || url == "" {
 		return nil
 	}
-	username, _, err := store.NewKvRepo(db).Get(ctx, "caldav.username")
+	username, _, err := kv.Get(ctx, "caldav.username")
 	if err != nil || username == "" {
 		return nil
 	}

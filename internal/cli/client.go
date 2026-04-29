@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -252,6 +251,3 @@ func (c *Client) Standup(ctx context.Context, date string) (api.StandupReport, e
 	}
 	return out, nil
 }
-
-// ErrDaemonNotRunning indicates the daemon is unreachable. (Reserved for future use.)
-var ErrDaemonNotRunning = errors.New("daemon not running")

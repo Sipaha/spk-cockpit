@@ -14,8 +14,8 @@ type Bus struct {
 	closed bool
 }
 
-// New creates a Bus. The argument is reserved for future tuning and currently ignored.
-func New(_ int) *Bus {
+// New creates a Bus.
+func New() *Bus {
 	return &Bus{subs: map[chan api.Event]struct{}{}}
 }
 

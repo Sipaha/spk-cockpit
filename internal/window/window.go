@@ -26,6 +26,12 @@ type App struct {
 	ctx        context.Context
 	socketPath string
 
+	// showMu serializes Show() and ShowAt(). Wails v2 runtime methods are not
+	// documented as goroutine-safe, and the AlwaysOnTop toggle pattern around
+	// WindowShow is order-sensitive — concurrent tray double-clicks can
+	// otherwise interleave the toggle in unintended ways.
+	showMu sync.Mutex
+
 	geomMu       sync.Mutex
 	lastGeometry *Geometry // last known visible geometry, refreshed by the geometry poller
 }
@@ -68,6 +74,8 @@ func (a *App) Show() {
 	if a.ctx == nil {
 		return
 	}
+	a.showMu.Lock()
+	defer a.showMu.Unlock()
 	wruntime.WindowUnminimise(a.ctx)
 	wruntime.WindowShow(a.ctx)
 	if g := a.getGeometry(); g != nil {
@@ -168,13 +176,6 @@ type Geometry struct {
 // restarts. Either may be nil to disable persistence.
 func Run(assets embed.FS, socketPath string, ready func(*App), loadGeometry func() *Geometry, saveGeometry func(Geometry)) error {
 	app := NewApp(socketPath)
-	go func() {
-		// Give Wails a beat to wire OnStartup; ready receives the app handle either way.
-		time.Sleep(200 * time.Millisecond)
-		if ready != nil {
-			ready(app)
-		}
-	}()
 
 	width, height := 1100, 720
 	var startX, startY int
@@ -206,7 +207,16 @@ func Run(assets embed.FS, socketPath string, ready func(*App), loadGeometry func
 		// no-op without devtools enabled, so it's safe in release builds.
 		EnableDefaultContextMenu: true,
 		Linux:                    &linux.Options{ProgramName: "spk-cockpit", Icon: appfiles.AppIcon},
-		OnStartup:         app.onStartup,
+		// OnStartup fires once Wails has wired up the runtime context, so this
+		// is the earliest point a Show() call can succeed. Hand the app handle
+		// to the tray here — replacing an earlier 200ms sleep that raced with a
+		// slow startup on low-power machines.
+		OnStartup: func(ctx context.Context) {
+			app.onStartup(ctx)
+			if ready != nil {
+				ready(app)
+			}
+		},
 		OnDomReady: func(ctx context.Context) {
 			if hasPos {
 				wruntime.WindowSetPosition(ctx, startX, startY)

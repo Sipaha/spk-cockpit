@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { StandupReport, StandupItem } from "../lib/types";
 import { api } from "../lib/api";
+import { safeUrl } from "../lib/smartText";
 
 export function Standup() {
   const [report, setReport] = useState<StandupReport | null>(null);
@@ -67,10 +68,10 @@ function Section({ title, items }: { title: string; items: StandupItem[] }) {
       ) : (
         <ul className="space-y-2">
           {items.map((it, i) => (
-            <li key={`${it.refId}-${i}`} className="text-sm">
+            <li key={`${it.source}-${it.refId ?? it.title}-${i}`} className="text-sm">
               <span className="text-fgmute mr-2">[{tagFor(it.source)}]</span>
               {it.url ? (
-                <a className="hover:underline" href={it.url} target="_blank" rel="noreferrer">
+                <a className="hover:underline" href={safeUrl(it.url)} target="_blank" rel="noreferrer">
                   {it.title}
                 </a>
               ) : (

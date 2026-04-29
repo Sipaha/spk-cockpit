@@ -9,13 +9,13 @@ import { EventStream } from "../lib/events";
 const stream = new EventStream();
 
 export function Popover() {
-  const {
-    todos,
-    activeTimers,
-    load,
-    loadActiveTimer,
-    applyEvent,
-  } = useTodoStore();
+  // Per-field selectors so unrelated state slices (meetings, tags, etc.)
+  // mutating from SSE events don't re-render this hot tray-popover view.
+  const todos = useTodoStore((s) => s.todos);
+  const activeTimers = useTodoStore((s) => s.activeTimers);
+  const load = useTodoStore((s) => s.load);
+  const loadActiveTimer = useTodoStore((s) => s.loadActiveTimer);
+  const applyEvent = useTodoStore((s) => s.applyEvent);
 
   useEffect(() => {
     void load();
@@ -28,7 +28,9 @@ export function Popover() {
     };
   }, [load, loadActiveTimer, applyEvent]);
 
-  const open = todos.filter((t) => t.status !== "done" && t.status !== "cancelled");
+  const open = todos.filter(
+    (t) => t.status !== "done" && t.status !== "cancelled" && t.status !== "backlog",
+  );
   const top = open.slice(0, 5);
   const primaryActive = activeTimers.length > 0
     ? activeTimers.reduce((a, b) => (a.startedAt < b.startedAt ? a : b))

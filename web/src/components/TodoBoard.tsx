@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,7 @@ import { TagsManager } from "./TagsManager";
 import { TrashList } from "./TrashList";
 import { UndoToast } from "./UndoToast";
 import type { Todo, TodoStatus } from "../lib/types";
+import { firstLine } from "../lib/textUtils";
 
 const COLUMNS: { id: TodoStatus; label: string }[] = [
   { id: "open", label: "To Do" },
@@ -76,22 +77,25 @@ type ModalState =
   | null;
 
 export function TodoBoard() {
-  const {
-    todos,
-    loading,
-    error,
-    load,
-    setIncludeDone,
-    activeTimers,
-    loadActiveTimer,
-    loadTags,
-    loadTaskPatterns,
-    taskPatterns,
-  } = useTodoStore();
+  // Per-field selectors so unrelated state slices (meetings, syncStates,
+  // etc.) mutating from SSE events don't re-render the entire kanban.
+  const todos = useTodoStore((s) => s.todos);
+  const loading = useTodoStore((s) => s.loading);
+  const error = useTodoStore((s) => s.error);
+  const setIncludeDone = useTodoStore((s) => s.setIncludeDone);
+  const activeTimers = useTodoStore((s) => s.activeTimers);
+  const loadActiveTimer = useTodoStore((s) => s.loadActiveTimer);
+  const loadTags = useTodoStore((s) => s.loadTags);
+  const loadTaskPatterns = useTodoStore((s) => s.loadTaskPatterns);
+  const taskPatterns = useTodoStore((s) => s.taskPatterns);
 
+  // Initial fetch — runs once on mount. Zustand actions are stable references,
+  // so listing them as deps would just re-fire the effect on every selector
+  // change with no benefit; the empty array is intentional.
+  // setIncludeDone() in the store already triggers load(), so we don't call
+  // load() explicitly to avoid two concurrent /api/todos requests.
   useEffect(() => {
     setIncludeDone(true);
-    void load();
     void loadActiveTimer();
     void loadTags();
     void loadTaskPatterns();
@@ -100,17 +104,37 @@ export function TodoBoard() {
 
   const buckets = useMemo(() => bucketize(todos), [todos]);
 
+  // Optimistic-state model: `override` shows the pending drop layout for one
+  // in-flight move. `pendingMove` records what we asked the server for so we
+  // can (a) detect when the SSE echo for the move arrives (then the override
+  // can clear) and (b) ignore unrelated `todos` updates that would otherwise
+  // wipe the override mid-drag, and (c) avoid a failing move's catch block
+  // from clearing a SECOND, still-in-flight drag's optimistic state.
   const [override, setOverride] = useState<Buckets | null>(null);
+  type PendingMove = { seq: number; id: string; targetStatus: TodoStatus };
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
+  const moveSeqRef = useRef(0);
+
   useEffect(() => {
-    setOverride(null);
-  }, [todos]);
+    if (!override || !pendingMove) return;
+    // Clear the override only when the SSE-driven todos array reflects the
+    // move we kicked off — i.e. the moved todo is now in its target column
+    // server-side. Unrelated SSE events (timer started, sibling edited) leave
+    // the optimistic state intact.
+    const moved = todos.find((t) => t.id === pendingMove.id);
+    if (moved && moved.status === pendingMove.targetStatus) {
+      setOverride(null);
+      setPendingMove(null);
+    }
+  }, [todos, override, pendingMove]);
   const view = override ?? buckets;
 
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const activeTodo = useMemo(
-    () => todos.find((t) => t.id === activeId) ?? null,
-    [activeId, todos],
-  );
+  // activeSnapshot is the dragged todo captured at onDragStart so DragOverlay
+  // is immune to concurrent SSE updates that might otherwise change the
+  // overlay's title/tags mid-drag while the underlying SortableCard still
+  // shows pre-drag state. (The SortableCard's own `isDragging` style hook
+  // comes from dnd-kit, so we don't need to track activeId separately.)
+  const [activeSnapshot, setActiveSnapshot] = useState<Todo | null>(null);
 
   const [modal, setModal] = useState<ModalState>(null);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
@@ -136,11 +160,12 @@ export function TodoBoard() {
   }
 
   function onDragStart(e: DragStartEvent) {
-    setActiveId(String(e.active.id));
+    const id = String(e.active.id);
+    setActiveSnapshot(todos.find((t) => t.id === id) ?? null);
   }
 
   async function onDragEnd(e: DragEndEvent) {
-    setActiveId(null);
+    setActiveSnapshot(null);
     const id = String(e.active.id);
     const overId = e.over ? String(e.over.id) : null;
     if (!overId) return;
@@ -211,6 +236,8 @@ export function TodoBoard() {
       next[toCol] = updatedPostList;
     }
     setOverride(next);
+    const seq = ++moveSeqRef.current;
+    setPendingMove({ seq, id, targetStatus: toCol });
 
     try {
       await api.moveTodo(id, {
@@ -220,10 +247,14 @@ export function TodoBoard() {
       });
     } catch (err) {
       // Surface the failure so a stale daemon binary (no /move endpoint) or
-      // a 4xx from the server doesn't just look like a silent revert.
-      // eslint-disable-next-line no-console
+      // a 4xx from the server doesn't just look like a silent revert. Only
+      // revert if no later move has superseded this one — otherwise we'd
+      // wipe a still-in-flight drag's optimistic state.
       console.error("[todo move] request failed, reverting card", err);
-      setOverride(null);
+      if (moveSeqRef.current === seq) {
+        setOverride(null);
+        setPendingMove(null);
+      }
     }
   }
 
@@ -374,9 +405,9 @@ export function TodoBoard() {
           ))}
         </div>
         <DragOverlay>
-          {activeTodo && (
+          {activeSnapshot && (
             <div className="bg-bg border border-accent rounded shadow-lg">
-              <TodoRow {...cardProps(activeTodo)} />
+              <TodoRow {...cardProps(activeSnapshot)} />
             </div>
           )}
         </DragOverlay>
@@ -477,12 +508,6 @@ export function TodoBoard() {
       )}
     </div>
   );
-}
-
-function firstLine(s: string, max: number): string {
-  const nl = s.indexOf("\n");
-  const line = nl === -1 ? s : s.slice(0, nl);
-  return line.length > max ? line.slice(0, max) + "…" : line;
 }
 
 interface ColumnProps {

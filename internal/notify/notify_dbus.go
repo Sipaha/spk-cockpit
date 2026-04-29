@@ -20,11 +20,21 @@ type DBusNotifier struct {
 	conn *dbus.Conn
 }
 
-// NewDBus connects to the session bus.
+// NewDBus opens a private session-bus connection that this notifier owns. We
+// use SessionBusPrivate (rather than the process-wide SessionBus) so Close()
+// doesn't sever a connection any other in-process consumer might be using.
 func NewDBus() (*DBusNotifier, error) {
-	conn, err := dbus.SessionBus()
+	conn, err := dbus.SessionBusPrivate()
 	if err != nil {
 		return nil, fmt.Errorf("dbus session: %w", err)
+	}
+	if err := conn.Auth(nil); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("dbus auth: %w", err)
+	}
+	if err := conn.Hello(); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("dbus hello: %w", err)
 	}
 	return &DBusNotifier{conn: conn}, nil
 }

@@ -16,10 +16,10 @@ type linuxTray struct {
 
 	mu sync.Mutex
 	// Menu items kept for live updates.
-	timerInfo   *systray.MenuItem
-	meetingInfo *systray.MenuItem
-	overdueInfo *systray.MenuItem
-	syncInfo    *systray.MenuItem
+	timerInfo    *systray.MenuItem
+	meetingInfo  *systray.MenuItem
+	overdueInfo  *systray.MenuItem
+	syncInfo     *systray.MenuItem
 	stopTimer    *systray.MenuItem
 	quickAddTodo *systray.MenuItem
 	openStandup  *systray.MenuItem

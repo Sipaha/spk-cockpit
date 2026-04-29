@@ -22,7 +22,9 @@ const INITIAL_LATER_DAYS = 5;
 const SHOW_MORE_STEP_DAYS = 7;
 
 export function Calendar() {
-  const { meetings, meetingsLoading, loadMeetings } = useTodoStore();
+  const meetings = useTodoStore((s) => s.meetings);
+  const meetingsLoading = useTodoStore((s) => s.meetingsLoading);
+  const loadMeetings = useTodoStore((s) => s.loadMeetings);
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [noteBody, setNoteBody] = useState("");
   const [savingNote, setSavingNote] = useState(false);
@@ -42,11 +44,17 @@ export function Calendar() {
     return loadMeetings(from, to);
   };
 
+  // Initial load — runs once on mount. `reload` is recreated on every render,
+  // so listing it as a dep would re-fetch the meeting list on every state
+  // change with no benefit.
   useEffect(() => {
     void reload();
-    Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")]).then(([u, n]) =>
-      setConfigured(Boolean(u.value && n.value)),
-    );
+    Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")])
+      .then(([u, n]) => setConfigured(Boolean(u.value && n.value)))
+      .catch(() => {
+        // Transient backend error — leave `configured` at its current value
+        // rather than getting stuck showing the "not configured" empty state.
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -197,9 +205,9 @@ export function Calendar() {
         <CalendarSettingsModal
           onClose={() => setSettingsOpen(false)}
           onSaved={() => {
-            Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")]).then(([u, n]) =>
-              setConfigured(Boolean(u.value && n.value)),
-            );
+            Promise.all([api.getKv("caldav.url"), api.getKv("caldav.username")])
+              .then(([u, n]) => setConfigured(Boolean(u.value && n.value)))
+              .catch(() => {});
             void reload();
           }}
         />

@@ -14,6 +14,10 @@ export function UndoToast({ message, durationMs, onUndo, onDismiss }: UndoToastP
   const [progress, setProgress] = useState(1);
   const dismissed = useRef(false);
 
+  // The RAF loop captures `onDismiss` once per mount; we don't want a new
+  // closure on every parent re-render to restart the timer mid-countdown.
+  // The `dismissed` ref guards against firing twice if the parent does swap
+  // the callback.
   useEffect(() => {
     const start = performance.now();
     let raf = 0;

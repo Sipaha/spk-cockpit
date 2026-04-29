@@ -44,7 +44,7 @@ func newTodoSvc(t *testing.T) (*todo.Service, *stubEvents) {
 	repo := fakerepo.NewTodo()
 	tags := fakerepo.NewTag()
 	events := &stubEvents{}
-	bus := eventbus.New(8)
+	bus := eventbus.New()
 	t.Cleanup(func() { bus.Close() })
 	svc := todo.NewService(repo, tags, events, clock.Real(), bus)
 	return svc, events
@@ -61,7 +61,7 @@ func TestService_Generate_TodosOnly(t *testing.T) {
 	created, err := svc.Create(ctx, api.CreateTodoRequest{Title: "Ship feature X"})
 	require.NoError(t, err)
 	doneStatus := api.StatusDone
-	_, err = svc.Update(ctx, created.ID, api.UpdateTodoRequest{Status: &doneStatus})
+	_, _, err = svc.Update(ctx, created.ID, api.UpdateTodoRequest{Status: &doneStatus})
 	require.NoError(t, err)
 
 	// Override the event time to land in yesterday's window.
@@ -75,7 +75,7 @@ func TestService_Generate_TodosOnly(t *testing.T) {
 	wip, err := svc.Create(ctx, api.CreateTodoRequest{Title: "Polish settings UI"})
 	require.NoError(t, err)
 	wipStatus := api.StatusInProgress
-	_, err = svc.Update(ctx, wip.ID, api.UpdateTodoRequest{Status: &wipStatus})
+	_, _, err = svc.Update(ctx, wip.ID, api.UpdateTodoRequest{Status: &wipStatus})
 	require.NoError(t, err)
 
 	// Blocker: urgent overdue.

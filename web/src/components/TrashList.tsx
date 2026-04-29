@@ -3,13 +3,9 @@ import { RotateCcw } from "lucide-react";
 import { api } from "../lib/api";
 import { TagPill } from "./TagPill";
 import type { Todo } from "../lib/types";
+import { firstLine } from "../lib/textUtils";
 
 const TITLE_MAX = 100;
-function firstLine(s: string): string {
-  const nl = s.indexOf("\n");
-  const line = nl === -1 ? s : s.slice(0, nl);
-  return line.length > TITLE_MAX ? line.slice(0, TITLE_MAX) + "…" : line;
-}
 
 // Shared list-of-deleted-todos with per-row Restore. Used both by the
 // Trash page and the Trash modal opened from the Todos board.
@@ -52,7 +48,7 @@ export function TrashList() {
           key={t.id}
           className="flex items-center gap-3 p-2 rounded hover:bg-bgsub group"
         >
-          <span className="flex-1 truncate text-fgmute">{firstLine(t.title)}</span>
+          <span className="flex-1 truncate text-fgmute">{firstLine(t.title, TITLE_MAX)}</span>
           <div className="flex gap-1">
             {(t.tags ?? []).map((tag) => (
               <TagPill key={tag} name={tag} />

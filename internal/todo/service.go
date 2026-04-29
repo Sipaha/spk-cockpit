@@ -15,22 +15,17 @@ import (
 	"github.com/spk/spk-cockpit/internal/clock"
 )
 
-// EventPublisher publishes domain events. The bus passed to Service may be nil — methods are nil-safe.
-type EventPublisher interface {
-	Publish(api.Event)
-}
-
 // Service is the Todo domain entry point. It owns mutations, audit log emission and event publishing.
 type Service struct {
 	todos  TodoRepo
 	tags   TagRepo
 	events EventRepo
 	clock  clock.Clock
-	bus    EventPublisher
+	bus    api.EventPublisher
 }
 
 // NewService wires the service. bus may be nil.
-func NewService(t TodoRepo, g TagRepo, e EventRepo, c clock.Clock, bus EventPublisher) *Service {
+func NewService(t TodoRepo, g TagRepo, e EventRepo, c clock.Clock, bus api.EventPublisher) *Service {
 	return &Service{todos: t, tags: g, events: e, clock: c, bus: bus}
 }
 
@@ -92,11 +87,15 @@ func (s *Service) Get(ctx context.Context, id string) (api.Todo, error) {
 }
 
 // Update applies non-nil fields, updates timestamps, sets DoneAt for status=done,
-// replaces tags if provided, and emits audit and bus events.
-func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoRequest) (api.Todo, error) {
+// replaces tags if provided, and emits audit and bus events. Returns the
+// updated todo plus the pre-mutation status so handlers can wire transition-
+// triggered side-effects (e.g. auto-timer) without a separate pre-flight Get
+// (which would TOCTOU against a concurrent edit).
+func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoRequest) (api.Todo, api.TodoStatus, error) {
 	now := s.clock.Now().Unix()
 	var changed []string
 	var (
+		oldStatus            api.TodoStatus
 		statusFrom, statusTo api.TodoStatus
 		statusChanged        bool
 		prioFrom, prioTo     api.Priority
@@ -104,6 +103,7 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 	)
 
 	updated, err := s.todos.Update(ctx, id, func(t *api.Todo) error {
+		oldStatus = t.Status
 		if req.Title != nil {
 			if strings.TrimSpace(*req.Title) == "" {
 				return errors.New("title is required")
@@ -150,12 +150,12 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 		return nil
 	})
 	if err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, "", err
 	}
 
 	if req.Tags != nil {
 		if err := s.tags.SetTodoTags(ctx, id, *req.Tags); err != nil {
-			return api.Todo{}, fmt.Errorf("set tags: %w", err)
+			return api.Todo{}, "", fmt.Errorf("set tags: %w", err)
 		}
 		changed = append(changed, "tags")
 		if *req.Tags == nil {
@@ -166,7 +166,7 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 	} else {
 		tags, err := s.tags.GetTodoTags(ctx, id)
 		if err != nil {
-			return api.Todo{}, fmt.Errorf("get tags: %w", err)
+			return api.Todo{}, "", fmt.Errorf("get tags: %w", err)
 		}
 		updated.Tags = tags
 	}
@@ -203,7 +203,7 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 		})
 		s.publish(api.EventTodoUpdated, api.TodoUpdatedData{Todo: updated, ChangedFields: changed})
 	}
-	return updated, nil
+	return updated, oldStatus, nil
 }
 
 // Move places `id` in (possibly new) target column, ordered between AfterID
@@ -212,15 +212,17 @@ func (s *Service) Update(ctx context.Context, id string, req api.UpdateTodoReque
 // successive averaging), the entire target column is rebalanced atomically
 // alongside the move.
 //
-// Auto-timer side-effects (start on transition to in_progress, stop on
-// transition out) live in the HTTP handler — same as Service.Update —
-// because they cross domain boundaries.
-func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) (api.Todo, error) {
+// Returns the post-mutation primary plus the pre-mutation status (for
+// handlers' auto-timer side-effects). The pre-status is captured inside the
+// repo's tx so concurrent edits between the handler's request and this call
+// can't slip in undetected — closing the TOCTOU window the HTTP handler
+// previously had via a separate pre-flight Get.
+func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) (api.Todo, api.TodoStatus, error) {
 	now := s.clock.Now().Unix()
 
 	moved, err := s.todos.Get(ctx, id)
 	if err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, "", err
 	}
 
 	targetCol := moved.Status
@@ -235,7 +237,7 @@ func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) 
 		IncludeDone: true,
 	})
 	if err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, "", err
 	}
 	others := make([]api.Todo, 0, len(colItems))
 	for _, t := range colItems {
@@ -347,7 +349,12 @@ func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) 
 		}
 	}
 
+	// Capture the pre-mutation status inside the tx-bound mutate callback so
+	// the value reflects the row at write-time, not a stale Get from before
+	// the tx started. This is what handlers use for auto-timer side-effects.
+	var oldStatus api.TodoStatus
 	mutate := func(t *api.Todo) error {
+		oldStatus = t.Status
 		t.SortOrder = newSortOrder
 		t.UpdatedAt = now
 		if t.Status != targetCol {
@@ -366,28 +373,28 @@ func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) 
 		return nil
 	}
 
-	updated, err := s.todos.MoveAndReorder(ctx, id, mutate, siblings)
+	updated, updatedSiblings, err := s.todos.MoveAndReorder(ctx, id, mutate, siblings)
 	if err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, "", err
 	}
 	tags, err := s.tags.GetTodoTags(ctx, id)
 	if err != nil {
-		return api.Todo{}, fmt.Errorf("get tags: %w", err)
+		return api.Todo{}, "", fmt.Errorf("get tags: %w", err)
 	}
 	updated.Tags = tags
 
-	statusChanged := moved.Status != updated.Status
+	statusChanged := oldStatus != updated.Status
 	if statusChanged {
 		_ = s.events.Append(ctx, api.TodoEvent{
 			TodoID:    id,
 			Kind:      "status_changed",
-			FromValue: string(moved.Status),
+			FromValue: string(oldStatus),
 			ToValue:   string(updated.Status),
 			At:        now,
 		})
 		s.publish(api.EventTodoStatusChanged, api.TodoStatusChangedData{
 			TodoID: id,
-			From:   moved.Status,
+			From:   oldStatus,
 			To:     updated.Status,
 		})
 	}
@@ -395,21 +402,18 @@ func (s *Service) Move(ctx context.Context, id string, req api.MoveTodoRequest) 
 		Todo:          updated,
 		ChangedFields: []string{"sortOrder"},
 	})
-	// Notify subscribers about the rebalanced siblings too, so the kanban
-	// can re-sort without a hard reload.
-	for _, sib := range siblings {
-		t, err := s.todos.Get(ctx, sib.ID)
-		if err != nil {
-			continue
-		}
+	// Notify subscribers about the rebalanced siblings — using the slice
+	// returned from the same tx, so a concurrent soft-delete can't drop a
+	// sibling event between commit and the (now-eliminated) post-commit Get.
+	for _, sib := range updatedSiblings {
 		stags, _ := s.tags.GetTodoTags(ctx, sib.ID)
-		t.Tags = stags
+		sib.Tags = stags
 		s.publish(api.EventTodoUpdated, api.TodoUpdatedData{
-			Todo:          t,
+			Todo:          sib,
 			ChangedFields: []string{"sortOrder"},
 		})
 	}
-	return updated, nil
+	return updated, oldStatus, nil
 }
 
 // DismissDone marks a Done todo as hidden from the kanban board without
@@ -499,11 +503,6 @@ func (s *Service) List(ctx context.Context, f TodoFilter) ([]api.Todo, error) {
 		list[i].Tags = tags
 	}
 	return list, nil
-}
-
-// History returns audit events for a single todo (newest first).
-func (s *Service) History(ctx context.Context, id string, limit int) ([]api.TodoEvent, error) {
-	return s.events.ListByTodo(ctx, id, limit)
 }
 
 func newID() string {

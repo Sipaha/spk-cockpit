@@ -13,7 +13,7 @@ Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 - **Daily standup helper** — auto-aggregates "Yesterday / Today / Blockers" from completed todos, your GitLab commits, and any HTTP-queryable task tracker (configurable URL + token). One-click copy as markdown.
 - **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open standup, stop timer, refresh sync).
 - **Encrypted secrets** — AES-256-GCM with the master key sourced from the OS keyring (libsecret on Linux).
-- **Single static binary** — Go server + embedded React/Vite/Tailwind UI, served over a Unix domain socket. No Docker, no daemon manager other than systemd-user.
+- **Single self-contained binary** — Go server + embedded React/Vite/Tailwind UI, served over a Unix domain socket. CGO links libgtk-3, libwebkit2gtk-4.1, and libsecret-1 (see Build below). No Docker, no daemon manager other than systemd-user.
 
 ## Build
 
@@ -27,7 +27,7 @@ Then:
 
 ```bash
 make build
-./build/bin/spk-cockpit start
+./build/bin/spk-cockpit
 ```
 
 `make build` uses `-tags "webkit2_41 production"` for webkit2gtk 4.1 compatibility and Wails production mode.
@@ -66,27 +66,41 @@ spk-cockpit standup                       # markdown for today
 spk-cockpit standup --date 2026-04-26     # markdown for any day
 
 # lifecycle
-spk-cockpit start                         # launches tray + window + daemon
+spk-cockpit                               # launches tray + window + daemon (default action)
 spk-cockpit install --autostart           # systemd-user unit
 spk-cockpit stop                          # stop running daemon
 ```
 
 ## Configuration
 
-Static config lives in `~/.config/spk-cockpit/config.yml` (theme, log level, sync intervals). Runtime settings live in the SQLite KV store; secrets in the encrypted `secrets` table — both managed via the Settings page or the CLI/API.
+Runtime settings (theme, sync intervals, integration URLs) live in the SQLite KV
+store; secrets in the encrypted `secrets` table. Both are managed via the
+Settings page or the CLI/API. Log level is set via the `SPK_COCKPIT_LOG_LEVEL`
+environment variable.
+
+CalDAV (read-only meeting sync) needs both KV keys and the password secret:
+
+```bash
+SOCK=~/.local/state/spk-cockpit/cockpit.sock
+curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
+     -d '{"value": "https://caldav.example.com/principals/alice/"}' http://unix/api/kv/caldav.url
+curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
+     -d '{"value": "alice"}' http://unix/api/kv/caldav.username
+echo "my-app-password" | spk-cockpit secret set caldav_password
+```
 
 GitLab and Tracker integrations for the standup helper are optional; configure them via:
 
 ```bash
 spk-cockpit secret set gitlab_token       # personal access token, read_api scope
 
-SOCK=~/.local/state/spk-cockpit/cockpit.sock
 curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
      -d '{"value": "https://gitlab.example.com"}' http://unix/api/kv/gitlab.url
 curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
      -d '{"value": "alice"}' http://unix/api/kv/gitlab.author_username
 
-# Task tracker — same pattern with tracker.url, tracker.username, tracker_token.
+# Task tracker — same pattern: tracker.url and tracker.username via /api/kv,
+# and `spk-cockpit secret set tracker_token` for the bearer token.
 ```
 
 ## Filesystem layout
@@ -96,7 +110,6 @@ curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
 | `~/.local/share/spk-cockpit/cockpit.db` | SQLite database |
 | `~/.local/state/spk-cockpit/cockpit.sock` | Unix socket (HTTP + SSE API) |
 | `~/.local/state/spk-cockpit/log/cockpit.log` | Daemon log |
-| `~/.config/spk-cockpit/config.yml` | Static config |
 | `~/.config/systemd/user/spk-cockpit.service` | Autostart unit (when installed) |
 
 Override paths via `SPK_COCKPIT_DATA_DIR`, `SPK_COCKPIT_STATE_DIR`, `SPK_COCKPIT_CONFIG_DIR`.
@@ -112,12 +125,15 @@ The domain layer (`internal/{todo,meeting,timer,note,secret,standup}`) is transp
 ## Development
 
 ```bash
-make test    # Go tests (with -race) + Vitest
+make test    # Go tests + Vitest
 make lint    # golangci-lint + eslint
 make fmt
 ```
 
-For frontend hot-reload run `cd web && pnpm dev`; the daemon serves the embedded build, but during development you can run vite separately.
+For frontend hot-reload run `cd web && pnpm dev` — Vite serves the UI directly
+and proxies `/api/*` to the running daemon's Unix socket. The Go binary only
+serves the embedded build in production. To debug Go and JS together with the
+WebKit inspector, run `make run` (devtools-enabled binary).
 
 ## License
 

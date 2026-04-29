@@ -12,28 +12,15 @@ import (
 	"github.com/spk/spk-cockpit/internal/clock"
 )
 
-// EventPublisher publishes domain events. May be nil — service is nil-safe.
-type EventPublisher interface {
-	Publish(api.Event)
-}
-
 // Service is the note domain entry point.
 type Service struct {
 	repo  NoteRepo
 	clock clock.Clock
-	bus   EventPublisher
 }
 
 // NewService wires the service.
-func NewService(r NoteRepo, c clock.Clock, bus EventPublisher) *Service {
-	return &Service{repo: r, clock: c, bus: bus}
-}
-
-func (s *Service) publish(t string, data any) {
-	if s.bus == nil {
-		return
-	}
-	s.bus.Publish(api.Event{Type: t, Data: data})
+func NewService(r NoteRepo, c clock.Clock) *Service {
+	return &Service{repo: r, clock: c}
 }
 
 // Upsert creates or updates the (single) note attached to a meeting OR a todo.
@@ -69,9 +56,6 @@ func (s *Service) Upsert(ctx context.Context, req api.UpsertNoteRequest) (api.No
 	if err := s.repo.Upsert(ctx, n); err != nil {
 		return api.Note{}, fmt.Errorf("upsert: %w", err)
 	}
-	s.publish(api.EventNoteUpserted, api.NoteUpsertedData{
-		NoteID: n.ID, MeetingID: n.MeetingID, TodoID: n.TodoID,
-	})
 	return n, nil
 }
 
@@ -107,9 +91,4 @@ func (s *Service) FindByTodo(ctx context.Context, todoID string) (*api.Note, err
 		return nil, err
 	}
 	return &n, nil
-}
-
-// List returns notes filtered by attachment.
-func (s *Service) List(ctx context.Context, f NoteFilter) ([]api.Note, error) {
-	return s.repo.List(ctx, f)
 }

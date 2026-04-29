@@ -2,27 +2,7 @@ import { create } from "zustand";
 import { api } from "./api";
 import type { TaskPattern } from "./smartText";
 import type { Todo, Tag, ApiEvent, TimerSession, Meeting, SyncStateEntry } from "./types";
-
-// parseTaskPatterns is defensive against malformed KV blobs — a single bad
-// row shouldn't take down the whole rendering pipeline.
-function parseTaskPatterns(raw: string | undefined | null): TaskPattern[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (e): e is TaskPattern =>
-          typeof e === "object" &&
-          e !== null &&
-          typeof e.pattern === "string" &&
-          typeof e.urlTemplate === "string",
-      )
-      .map((e) => ({ pattern: e.pattern, urlTemplate: e.urlTemplate, name: e.name }));
-  } catch {
-    return [];
-  }
-}
+import { parseTaskPatterns } from "./patternUtils";
 
 interface AppState {
   todos: Todo[];

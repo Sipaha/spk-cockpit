@@ -8,20 +8,15 @@ import (
 	"github.com/spk/spk-cockpit/internal/clock"
 )
 
-// EventPublisher publishes domain events. May be nil — service is nil-safe.
-type EventPublisher interface {
-	Publish(api.Event)
-}
-
 // Service is the time-tracking domain service.
 type Service struct {
 	repo  TimerRepo
 	clock clock.Clock
-	bus   EventPublisher
+	bus   api.EventPublisher
 }
 
 // NewService constructs the Service with the given repository, clock, and optional event bus.
-func NewService(r TimerRepo, c clock.Clock, bus EventPublisher) *Service {
+func NewService(r TimerRepo, c clock.Clock, bus api.EventPublisher) *Service {
 	return &Service{repo: r, clock: c, bus: bus}
 }
 
@@ -114,9 +109,4 @@ func (s *Service) TotalForTodo(ctx context.Context, todoID string, sinceUnix int
 		SessionCnt: cnt,
 		HasActive:  active != nil,
 	}, nil
-}
-
-// ListSessions returns recent sessions for a todo, newest first.
-func (s *Service) ListSessions(ctx context.Context, todoID string, limit int) ([]api.TimerSession, error) {
-	return s.repo.ListByTodo(ctx, todoID, limit)
 }

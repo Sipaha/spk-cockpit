@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { useTodoStore } from "../lib/store";
+import { readableText } from "../lib/colorUtils";
 
 // Cyrillic + Latin + digits + a couple separators. The tag list is
 // user-driven, so anything that's not whitespace or a structural char is
@@ -14,15 +15,6 @@ export interface TagInputProps {
   onChange: (next: string[]) => void;
   suggestions: string[];
   placeholder?: string;
-}
-
-function readableText(hex: string): string {
-  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return "var(--color-fgmute)";
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 140 ? "#11111b" : "#cdd6f4";
 }
 
 // Chip that is a single colored capsule with the X tucked inside, so the

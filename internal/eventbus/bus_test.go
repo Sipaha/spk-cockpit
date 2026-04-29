@@ -12,7 +12,7 @@ import (
 )
 
 func TestBus_PublishesToAllSubscribers(t *testing.T) {
-	b := eventbus.New(8)
+	b := eventbus.New()
 	defer b.Close()
 
 	ch1 := b.Subscribe(8)
@@ -31,7 +31,7 @@ func TestBus_PublishesToAllSubscribers(t *testing.T) {
 }
 
 func TestBus_DropsForSlowSubscriber(t *testing.T) {
-	b := eventbus.New(8)
+	b := eventbus.New()
 	defer b.Close()
 
 	ch := b.Subscribe(1)
@@ -46,7 +46,7 @@ func TestBus_DropsForSlowSubscriber(t *testing.T) {
 }
 
 func TestBus_UnsubscribeStopsDelivery(t *testing.T) {
-	b := eventbus.New(8)
+	b := eventbus.New()
 	defer b.Close()
 
 	ch := b.Subscribe(8)

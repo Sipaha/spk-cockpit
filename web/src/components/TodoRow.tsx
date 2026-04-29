@@ -5,6 +5,7 @@ import { TagPill } from "./TagPill";
 import { TimerBadge } from "./TimerBadge";
 import { renderSmart } from "../lib/smartText";
 import type { TaskPattern } from "../lib/smartText";
+import { firstLine } from "../lib/textUtils";
 
 // Every card carries a strip — keeping a uniform left edge avoids the
 // horizontal jitter you'd see if some cards had it and others didn't.
@@ -33,10 +34,6 @@ const priorityLabel: Record<number, string> = {
   [Priority.Low]: "Low",
 };
 
-function firstLine(s: string): string {
-  const nl = s.indexOf("\n");
-  return nl === -1 ? s : s.slice(0, nl);
-}
 
 export interface TodoRowProps {
   todo: Todo;

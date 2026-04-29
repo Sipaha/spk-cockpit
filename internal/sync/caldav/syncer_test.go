@@ -27,9 +27,6 @@ func (f *stateRepoFake) Get(_ context.Context, source string) (api.SyncStateEntr
 	return api.SyncStateEntry{Source: source}, nil
 }
 func (f *stateRepoFake) Save(_ context.Context, e api.SyncStateEntry) error { f.entry = e; return nil }
-func (f *stateRepoFake) List(_ context.Context) ([]api.SyncStateEntry, error) {
-	return []api.SyncStateEntry{f.entry}, nil
-}
 
 func TestSyncer_RunOnce_UpsertsEventsAndMarksMissingCancelled(t *testing.T) {
 	t0 := time.Date(2026, 4, 27, 10, 0, 0, 0, time.UTC)

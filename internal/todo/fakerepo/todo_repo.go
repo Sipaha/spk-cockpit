@@ -95,20 +95,21 @@ func (r *Todo) Restore(_ context.Context, id string) (api.Todo, error) {
 
 // MoveAndReorder applies mutate to the primary todo and rewrites sort_order
 // on each listed sibling in a single mutex-protected pass.
-func (r *Todo) MoveAndReorder(_ context.Context, primaryID string, mutate func(*api.Todo) error, siblings []todo.SortOrderUpdate) (api.Todo, error) {
+func (r *Todo) MoveAndReorder(_ context.Context, primaryID string, mutate func(*api.Todo) error, siblings []todo.SortOrderUpdate) (api.Todo, []api.Todo, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	t, ok := r.byID[primaryID]
 	if !ok {
-		return api.Todo{}, todo.ErrNotFound
+		return api.Todo{}, nil, todo.ErrNotFound
 	}
 	if _, deleted := r.delAt[primaryID]; deleted {
-		return api.Todo{}, todo.ErrNotFound
+		return api.Todo{}, nil, todo.ErrNotFound
 	}
 	if err := mutate(&t); err != nil {
-		return api.Todo{}, err
+		return api.Todo{}, nil, err
 	}
 	r.byID[primaryID] = t
+	updatedSiblings := make([]api.Todo, 0, len(siblings))
 	for _, s := range siblings {
 		if s.ID == primaryID {
 			continue
@@ -117,10 +118,14 @@ func (r *Todo) MoveAndReorder(_ context.Context, primaryID string, mutate func(*
 		if !ok {
 			continue
 		}
+		if _, deleted := r.delAt[s.ID]; deleted {
+			continue
+		}
 		sib.SortOrder = s.SortOrder
 		r.byID[s.ID] = sib
+		updatedSiblings = append(updatedSiblings, sib)
 	}
-	return t, nil
+	return t, updatedSiblings, nil
 }
 
 // ListDeleted returns the deleted todos newest-first (best effort, since we
@@ -167,9 +172,17 @@ func (r *Todo) List(_ context.Context, f todo.TodoFilter) ([]api.Todo, error) {
 		}
 		out = append(out, t)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Priority != out[j].Priority {
-			return out[i].Priority > out[j].Priority
+	// Match SQLite's ORDER BY exactly: done last, then sort_order DESC,
+	// then created_at DESC. Service.Move depends on this ordering for
+	// neighbor math when computing rebalance positions.
+	sort.SliceStable(out, func(i, j int) bool {
+		di := out[i].Status == api.StatusDone
+		dj := out[j].Status == api.StatusDone
+		if di != dj {
+			return !di // not-done comes first
+		}
+		if out[i].SortOrder != out[j].SortOrder {
+			return out[i].SortOrder > out[j].SortOrder
 		}
 		return out[i].CreatedAt > out[j].CreatedAt
 	})

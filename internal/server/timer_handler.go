@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/timer"
@@ -78,45 +77,5 @@ func handleTimerActive(d *Deps) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, active)
-	}
-}
-
-func handleTodoTime(d *Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		var since int64
-		if v := r.URL.Query().Get("since"); v != "" {
-			n, err := strconv.ParseInt(v, 10, 64)
-			if err == nil {
-				since = n
-			}
-		}
-		total, err := d.Timer.TotalForTodo(r.Context(), id, since)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "timer.total_failed", err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, total)
-	}
-}
-
-func handleTodoTimerSessions(d *Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		limit := 100
-		if v := r.URL.Query().Get("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil { //nolint:gosec
-				limit = n
-			}
-		}
-		sessions, err := d.Timer.ListSessions(r.Context(), id, limit)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "timer.list_failed", err.Error())
-			return
-		}
-		if sessions == nil {
-			sessions = []api.TimerSession{}
-		}
-		writeJSON(w, http.StatusOK, sessions)
 	}
 }

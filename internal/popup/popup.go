@@ -15,16 +15,6 @@ import (
 	"github.com/spk/spk-cockpit/internal/api"
 )
 
-// Backend renders an on-screen popup for one meeting.
-//
-// Show is non-blocking: it spawns the popup process and returns immediately.
-type Backend interface {
-	Show(m api.Meeting)
-	// Available reports whether the backend can render a popup. When false,
-	// callers should fall through to a softer fallback (e.g. log only).
-	Available() bool
-}
-
 // Subprocess spawns `cockpit popup --meeting-id=<id> --socket=<sock>` for
 // each meeting. The child process opens its own Wails window connected to
 // the same UDS daemon and renders the meeting popup view.

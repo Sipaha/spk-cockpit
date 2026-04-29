@@ -11,7 +11,8 @@ export interface CalDAVSettingsProps {
 // password and triggering an immediate sync. Lives in the Calendar page's
 // gear panel; also reused as a standalone configure-CTA from the empty state.
 export function CalDAVSettings({ onSaved }: CalDAVSettingsProps) {
-  const { syncStates, loadSyncStatus } = useTodoStore();
+  const syncStates = useTodoStore((s) => s.syncStates);
+  const loadSyncStatus = useTodoStore((s) => s.loadSyncStatus);
   const [url, setUrl] = useState("");
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");

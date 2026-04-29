@@ -29,3 +29,11 @@ web/tsconfig.tsbuildinfo
 *.db.bak.*
 *.sock
 *.log
+
+# Dev artifacts (planning, audit, ad-hoc skill outputs — not part of the
+# product). Keep these on disk for personal reference, don't commit.
+docs/superpowers/
+.audit-backlog.md
+task.md
+jira-task.md
+notes-to-self.md

@@ -4,27 +4,9 @@ import { Plus, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { DEFAULT_TASK_PATTERN } from "../lib/smartText";
 import type { TaskPattern } from "../lib/smartText";
+import { parseTaskPatterns } from "../lib/patternUtils";
 
 const TASK_PATTERNS_KEY = "tracker.patterns";
-
-function readPatterns(raw: string | undefined | null): TaskPattern[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (e): e is TaskPattern =>
-          typeof e === "object" &&
-          e !== null &&
-          typeof e.pattern === "string" &&
-          typeof e.urlTemplate === "string",
-      )
-      .map((e) => ({ pattern: e.pattern, urlTemplate: e.urlTemplate, name: e.name }));
-  } catch {
-    return [];
-  }
-}
 
 export function Settings() {
   const [taskPatterns, setTaskPatterns] = useState<TaskPattern[]>([]);
@@ -32,7 +14,7 @@ export function Settings() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    void api.getKv(TASK_PATTERNS_KEY).then((r) => setTaskPatterns(readPatterns(r.value)));
+    void api.getKv(TASK_PATTERNS_KEY).then((r) => setTaskPatterns(parseTaskPatterns(r.value)));
   }, []);
 
   async function saveTracker() {

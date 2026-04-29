@@ -13,25 +13,17 @@ import (
 	"github.com/spk/spk-cockpit/internal/clock"
 )
 
-// EventPublisher publishes domain events. May be nil — service is nil-safe.
-type EventPublisher interface {
-	Publish(api.Event)
-}
-
 // Service is the meeting domain entry point.
 type Service struct {
 	repo  MeetingRepo
 	clock clock.Clock
-	bus   EventPublisher
+	bus   api.EventPublisher
 }
 
 // NewService wires the service.
-func NewService(r MeetingRepo, c clock.Clock, bus EventPublisher) *Service {
+func NewService(r MeetingRepo, c clock.Clock, bus api.EventPublisher) *Service {
 	return &Service{repo: r, clock: c, bus: bus}
 }
-
-// Clock exposes the injected clock (used by tests / scheduler).
-func (s *Service) Clock() clock.Clock { return s.clock }
 
 func (s *Service) publish(t string, data any) {
 	if s.bus == nil {
@@ -59,6 +51,7 @@ func (s *Service) CreateManual(ctx context.Context, req api.CreateMeetingRequest
 		StartAt:     req.StartAt,
 		EndAt:       req.EndAt,
 		NotifyMin:   req.NotifyMin,
+		PopupMin:    req.PopupMin,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -102,6 +95,10 @@ func (s *Service) UpdateManual(ctx context.Context, id string, req api.UpdateMee
 		if req.NotifyMin != nil {
 			m.NotifyMin = req.NotifyMin
 			m.NotifiedAt = nil
+		}
+		if req.PopupMin != nil {
+			m.PopupMin = req.PopupMin
+			m.PopupFiredAt = nil
 		}
 		m.UpdatedAt = now
 		return nil
@@ -207,12 +204,5 @@ func (s *Service) PendingPopup(ctx context.Context, defaultPopupMin int) ([]api.
 
 // MarkPopupFired records that the on-screen popup was shown for a meeting.
 func (s *Service) MarkPopupFired(ctx context.Context, id string) error {
-	now := s.clock.Now().Unix()
-	if err := s.repo.MarkPopupFired(ctx, id, now); err != nil {
-		return err
-	}
-	s.publish(api.EventMeetingPopupRequested, api.MeetingPopupRequestedData{
-		MeetingID: id, FiredAt: now,
-	})
-	return nil
+	return s.repo.MarkPopupFired(ctx, id, s.clock.Now().Unix())
 }

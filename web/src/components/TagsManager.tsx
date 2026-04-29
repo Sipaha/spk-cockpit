@@ -5,7 +5,8 @@ import { api } from "../lib/api";
 import { TagPill } from "./TagPill";
 
 export function TagsManager() {
-  const { tags, loadTags } = useTodoStore();
+  const tags = useTodoStore((s) => s.tags);
+  const loadTags = useTodoStore((s) => s.loadTags);
   const loadTodos = useTodoStore((s) => s.load);
   const [creating, setCreating] = useState("");
   const [busy, setBusy] = useState<string | null>(null);

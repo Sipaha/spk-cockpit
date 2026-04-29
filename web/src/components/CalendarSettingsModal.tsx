@@ -16,10 +16,16 @@ export function CalendarSettingsModal({ onClose, onSaved }: CalendarSettingsModa
   const [savingNotify, setSavingNotify] = useState(false);
   const [notifySaved, setNotifySaved] = useState<string | null>(null);
 
+  // Load KV defaults once on mount. Splitting from the Escape-listener effect
+  // below avoids re-fetching whenever the parent re-renders with a fresh
+  // `onClose` closure (Calendar passes an inline arrow, so onClose changes on
+  // every SSE-triggered re-render).
   useEffect(() => {
     void api.getKv("meeting.default_notify_min").then((r) => r.value && setDefaultNotifyMin(r.value));
     void api.getKv("meeting.default_popup_min").then((r) => r.value && setDefaultPopupMin(r.value));
+  }, []);
 
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }

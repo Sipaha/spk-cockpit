@@ -28,7 +28,7 @@ func (fakeEvents) ListByTodo(_ context.Context, _ string, _ int) ([]api.TodoEven
 }
 
 func TestStandupHandler_Empty(t *testing.T) {
-	bus := eventbus.New(4)
+	bus := eventbus.New()
 	defer bus.Close()
 	svc := todo.NewService(fakerepo.NewTodo(), fakerepo.NewTag(), fakeEvents{}, clock.Real(), bus)
 	st := standup.NewService(standup.Config{Todos: svc, Events: fakeEvents{}, Clock: clock.Real()})

@@ -1,4 +1,5 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
+import { openExternal } from "./wails";
 
 // Universal task-tracker rendering. The user configures one or more
 // (pattern, urlTemplate) pairs in Settings. Each pattern is a regex that
@@ -32,13 +33,19 @@ export interface TaskPattern {
   name?: string;
 }
 
-function openExternal(url: string, e: MouseEvent<HTMLAnchorElement>) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rt = (window as any).runtime;
-  if (rt && typeof rt.BrowserOpenURL === "function") {
-    e.preventDefault();
-    rt.BrowserOpenURL(url);
+// safeUrl returns the input unchanged if it parses as http: or https:, and "#"
+// otherwise. We render anchors with user-supplied URL templates ("$1" backrefs
+// resolved against a captured pattern), so a misconfigured template like
+// "javascript:alert($1)" or a tracker server returning a `javascript:` URL must
+// not become a click-to-execute sink in the Wails WebView.
+export function safeUrl(raw: string): string {
+  try {
+    const u = new URL(raw, "http://placeholder.invalid/");
+    if (u.protocol === "http:" || u.protocol === "https:") return raw;
+  } catch {
+    // fall through
   }
+  return "#";
 }
 
 function applyBackrefs(template: string, match: RegExpMatchArray): string {
@@ -56,9 +63,26 @@ interface CompiledPattern {
   urlTemplate: string;
 }
 
+// Cap pattern length and reject the most common catastrophic-backtracking
+// shapes before compiling. JS lacks a regex engine timeout, so a malicious or
+// accidental "(a+)+" pattern applied to every todo title on every render would
+// hang the UI thread. This isn't an exhaustive ReDoS detector (consider a
+// proper safe-regex library for that) — it catches:
+//   - quantified group containing a quantifier:  (a+)+, (.*)+, (ab*){2,}, etc.
+//   - adjacent quantifiers in the flat pattern:  a++, b**, etc.
+const MAX_PATTERN_LEN = 256;
+const NESTED_QUANTIFIER = /\(([^()]*?)([+*?]|\{\d+,?\d*\})([^()]*?)\)\s*([+*?]|\{\d+,?\d*\})/;
+const ADJACENT_QUANTIFIER = /([+*?]|\{\d+,?\d*\})\s*([+*?]|\{\d+,?\d*\})/;
+
+function looksRedos(src: string): boolean {
+  return NESTED_QUANTIFIER.test(src) || ADJACENT_QUANTIFIER.test(src);
+}
+
 function compile(p: TaskPattern): CompiledPattern | null {
   const src = p.pattern || DEFAULT_TASK_PATTERN;
   if (!p.urlTemplate) return null;
+  if (src.length > MAX_PATTERN_LEN) return null;
+  if (looksRedos(src)) return null;
   try {
     const single = new RegExp(src);
     const flags = single.flags.includes("g") ? single.flags : single.flags + "g";
@@ -93,7 +117,7 @@ export function renderSmart(text: string, patterns: TaskPattern[]): ReactNode[] 
       const inUrl = url.match(c.single);
       if (inUrl) {
         collapsed = {
-          url: applyBackrefs(c.urlTemplate, inUrl),
+          url: safeUrl(applyBackrefs(c.urlTemplate, inUrl)),
           label: `[${inUrl[1] ?? inUrl[0]}]`,
         };
         break;
@@ -116,7 +140,7 @@ export function renderSmart(text: string, patterns: TaskPattern[]): ReactNode[] 
       const start = m.index ?? 0;
       const end = start + m[0].length;
       if (ranges.some((r) => start < r.end && end > r.start)) continue;
-      const url = applyBackrefs(c.urlTemplate, m);
+      const url = safeUrl(applyBackrefs(c.urlTemplate, m));
       ranges.push({
         start,
         end,

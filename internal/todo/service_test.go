@@ -67,7 +67,7 @@ func TestService_Update_StatusChangeEmitsEventAndDoneAt(t *testing.T) {
 	require.NoError(t, err)
 
 	done := api.StatusDone
-	updated, err := s.Update(context.Background(), got.ID, api.UpdateTodoRequest{Status: &done})
+	updated, _, err := s.Update(context.Background(), got.ID, api.UpdateTodoRequest{Status: &done})
 	require.NoError(t, err)
 	require.Equal(t, api.StatusDone, updated.Status)
 	require.NotNil(t, updated.DoneAt)
@@ -87,7 +87,7 @@ func TestService_Update_PriorityChangeEmitsEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	urgent := api.PriorityUrgent
-	_, err = s.Update(context.Background(), got.ID, api.UpdateTodoRequest{Priority: &urgent})
+	_, _, err = s.Update(context.Background(), got.ID, api.UpdateTodoRequest{Priority: &urgent})
 	require.NoError(t, err)
 
 	events, err := er.ListByTodo(context.Background(), got.ID, 0)
@@ -120,7 +120,7 @@ func TestService_List_FiltersAndExcludesDoneByDefault(t *testing.T) {
 	a, _ := s.Create(context.Background(), api.CreateTodoRequest{Title: "Open"})
 	b, _ := s.Create(context.Background(), api.CreateTodoRequest{Title: "Done"})
 	done := api.StatusDone
-	_, _ = s.Update(context.Background(), b.ID, api.UpdateTodoRequest{Status: &done})
+	_, _, _ = s.Update(context.Background(), b.ID, api.UpdateTodoRequest{Status: &done})
 
 	got, err := s.List(context.Background(), todo.TodoFilter{})
 	require.NoError(t, err)

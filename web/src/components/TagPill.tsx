@@ -1,16 +1,5 @@
 import { useTodoStore } from "../lib/store";
-
-// Pick a readable text color (black or white) for an arbitrary background hex.
-// Uses the YIQ luma trick — good enough for rough contrast without pulling in
-// a color library.
-function readableText(hex: string): string {
-  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return "var(--color-fgmute)";
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 140 ? "#11111b" : "#cdd6f4";
-}
+import { readableText } from "../lib/colorUtils";
 
 // TagPill renders a tag as a colored chip. The colored capsule itself is the
 // "this is a tag" cue, so we drop the '#' prefix that used to live here —

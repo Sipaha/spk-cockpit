@@ -45,5 +45,4 @@ type MeetingRepo interface { //nolint:revive // domain naming intentional
 type SyncStateRepo interface {
 	Get(ctx context.Context, source string) (api.SyncStateEntry, error)
 	Save(ctx context.Context, entry api.SyncStateEntry) error
-	List(ctx context.Context) ([]api.SyncStateEntry, error)
 }

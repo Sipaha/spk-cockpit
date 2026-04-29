@@ -20,14 +20,18 @@ func handleEvents(d *Deps) http.HandlerFunc {
 			return
 		}
 
+		// Subscribe BEFORE flushing the response headers. Flushing causes the
+		// client's Do() to return, after which the test (or a real client) may
+		// immediately publish an event — if we subscribed after the flush, we'd
+		// race the publish and miss the event entirely.
+		ch := d.Bus.Subscribe(64)
+		defer d.Bus.Unsubscribe(ch)
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
-
-		ch := d.Bus.Subscribe(64)
-		defer d.Bus.Unsubscribe(ch)
 
 		ctx := r.Context()
 		for {

@@ -6,6 +6,24 @@ import (
 	"time"
 )
 
+// maxBodyBytes caps the size of any single request body the API will accept.
+// SSE responses don't have a request body so this doesn't affect them.
+const maxBodyBytes = 1 << 20 // 1 MiB
+
+// maxBodyMW wraps r.Body with http.MaxBytesReader so a single oversized payload
+// can't exhaust process memory. SSE handlers ignore r.Body, so streaming is
+// unaffected. We always wrap when Body is non-nil — including chunked
+// (ContentLength == -1) requests, where skipping the wrap would let a malicious
+// caller send unbounded chunked bodies.
+func maxBodyMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // recoverMW catches panics in handlers, logs them, and returns a 500.
 func recoverMW(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

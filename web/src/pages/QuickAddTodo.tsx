@@ -2,19 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { api } from "../lib/api";
 import { Priority } from "../lib/types";
-
-// Closes the standalone Wails subprocess window. In the embedded webview the
-// runtime bridge exposes Quit; in a plain browser tab (vite dev) we fall back
-// to window.close().
-function closeWindow() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rt = (window as any).runtime;
-  if (rt && typeof rt.Quit === "function") {
-    rt.Quit();
-    return;
-  }
-  window.close();
-}
+import { closeWindow } from "../lib/wails";
 
 export function QuickAddTodo() {
   const [text, setText] = useState("");
