@@ -522,7 +522,7 @@ export function TodoBoard() {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">Todos</h2>
@@ -566,7 +566,7 @@ export function TodoBoard() {
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0">
           {COLUMNS.map((col) => {
             // A column is the cross-column landing target when the dragged
             // card has been relocated INTO it (override.col contains active)
@@ -720,7 +720,7 @@ function Column({ id, label, items, renderCard, isLandingTarget }: ColumnProps) 
   return (
     <div
       ref={setNodeRef}
-      className={`bg-bgsub rounded-lg p-3 flex flex-col gap-3 min-h-48 transition-colors ${
+      className={`bg-bgsub rounded-lg p-3 flex flex-col gap-3 min-h-full overflow-y-auto transition-colors ${
         isLandingTarget ? "ring-1 ring-accent" : ""
       }`}
     >

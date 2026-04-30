@@ -49,7 +49,7 @@ function MainShell() {
           {navItem("/settings", "Settings")}
         </nav>
       </aside>
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-6 overflow-auto flex flex-col">
         <Routes>
           <Route path="/" element={<Todos />} />
           <Route path="/calendar" element={<Calendar />} />

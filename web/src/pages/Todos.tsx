@@ -18,7 +18,7 @@ export function Todos() {
   }, [applyEvent]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 flex-1 min-h-0">
       <TodoBoard />
     </div>
   );
