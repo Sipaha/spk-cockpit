@@ -28,7 +28,7 @@ import (
 // the full body up-front and replacing r.Body with a bytes.Reader makes the
 // forward deterministic at the cost of buffering the payload — fine for our
 // JSON-shaped /api/* traffic.
-func udsMiddleware(socketPath string) application.Middleware {
+func udsMiddleware(socketPath string, onEditTodo func(string)) application.Middleware {
 	transport := &http.Transport{
 		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 			return net.Dial("unix", socketPath)
@@ -44,6 +44,17 @@ func udsMiddleware(socketPath string) application.Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Desktop bridge: lets the in-app React UI ask the Wails Go
+			// side to open a child editor window. We can't expose that
+			// through plain JS/runtime in alpha.78, so the frontend hits
+			// this magic path and the middleware runs the callback.
+			if r.URL.Path == "/__desktop/edit-todo" {
+				if onEditTodo != nil {
+					onEditTodo(r.URL.Query().Get("id"))
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				if r.Body != nil && r.Body != http.NoBody {
 					buf, err := io.ReadAll(r.Body)

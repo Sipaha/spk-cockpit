@@ -21,10 +21,7 @@ import { Inbox, Plus, Tag as TagIcon, Trash2 as Trash2Icon } from "lucide-react"
 
 import { useTodoStore } from "../lib/store";
 import { api } from "../lib/api";
-import { parseQuickAdd } from "../lib/parser";
-import { Priority } from "../lib/types";
 import { TodoRow } from "./TodoRow";
-import { TodoEditorModal } from "./TodoEditorModal";
 import { TodoViewModal } from "./TodoViewModal";
 import { BacklogList } from "./BacklogList";
 import { TagsManager } from "./TagsManager";
@@ -119,9 +116,7 @@ function groupDoneByDate(items: Todo[]): DoneGroup[] {
 }
 
 type ModalState =
-  | { mode: "new" }
   | { mode: "view"; todo: Todo }
-  | { mode: "edit"; todo: Todo }
   | null;
 
 export function TodoBoard() {
@@ -189,11 +184,6 @@ export function TodoBoard() {
   const [trashModalOpen, setTrashModalOpen] = useState(false);
   const [backlogModalOpen, setBacklogModalOpen] = useState(false);
   const [undo, setUndo] = useState<Todo | null>(null);
-  // Reading s.tags directly keeps the selector referentially stable; mapping
-  // to names runs in a memo so we don't trigger Zustand's "snapshot changed
-  // every render" infinite-loop guard.
-  const tagsRaw = useTodoStore((s) => s.tags);
-  const tagNames = useMemo(() => tagsRaw.map((t) => t.name), [tagsRaw]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -504,7 +494,7 @@ export function TodoBoard() {
     setModal({ mode: "view", todo });
   }
   function openEdit(todo: Todo) {
-    setModal({ mode: "edit", todo });
+    void fetch("/__desktop/edit-todo?id=" + encodeURIComponent(todo.id));
   }
   async function hideFromDone(todo: Todo) {
     try {
@@ -520,45 +510,6 @@ export function TodoBoard() {
       // ignore — SSE event would have echoed success; failures are usually
       // transient and the user can retry.
     }
-  }
-
-  // Save handler for the create modal: parse the first line for #tags,
-  // !priority, due:… via the same quick-add parser the previous inline form
-  // used. The cleaned title (without those tokens) becomes Todo.Title;
-  // remaining lines fall through unchanged as notes. Tags entered explicitly
-  // via TagInput are merged with whatever the parser pulled out of the
-  // title, so both pathways add up. The modal-selected priority overrides
-  // the parsed one when the user touched the priority picker (i.e. it's
-  // not the default Normal); otherwise the parsed tag wins.
-  async function createFromModal(
-    rawTitle: string,
-    notes: string,
-    tags: string[],
-    priority: Priority,
-  ) {
-    const parsed = parseQuickAdd(rawTitle);
-    const merged = Array.from(new Set([...parsed.tags, ...tags]));
-    const finalPriority =
-      priority !== Priority.Normal
-        ? priority
-        : parsed.priority ?? Priority.Normal;
-    await api.createTodo({
-      title: parsed.title || rawTitle,
-      notes: notes || undefined,
-      priority: finalPriority,
-      tags: merged.length > 0 ? merged : undefined,
-      dueAt: parsed.dueAt,
-    });
-  }
-
-  async function saveEdit(
-    id: string,
-    title: string,
-    notes: string,
-    tags: string[],
-    priority: Priority,
-  ) {
-    await api.updateTodo(id, { title, notes, tags, priority });
   }
 
   const cardProps = (t: Todo) => {
@@ -581,7 +532,7 @@ export function TodoBoard() {
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold">Todos</h2>
           <button
-            onClick={() => setModal({ mode: "new" })}
+            onClick={() => void fetch("/__desktop/edit-todo")}
             className="flex items-center gap-1 px-3 py-1.5 bg-accent text-bg rounded text-sm hover:opacity-90"
           >
             <Plus size={14} /> Add
@@ -665,36 +616,15 @@ export function TodoBoard() {
           )}
         </DragOverlay>
       </DndContext>
-      {modal?.mode === "new" && (
-        <TodoEditorModal
-          heading="New todo"
-          initialText=""
-          initialTags={[]}
-          initialPriority={Priority.Normal}
-          tagSuggestions={tagNames}
-          onClose={() => setModal(null)}
-          onSave={createFromModal}
-        />
-      )}
       {modal?.mode === "view" && (
         <TodoViewModal
           todo={modal.todo}
           taskPatterns={taskPatterns}
           onClose={() => setModal(null)}
-          onEdit={() => setModal({ mode: "edit", todo: modal.todo })}
-        />
-      )}
-      {modal?.mode === "edit" && (
-        <TodoEditorModal
-          heading="Edit todo"
-          initialText={modal.todo.title + (modal.todo.notes ? "\n" + modal.todo.notes : "")}
-          initialTags={modal.todo.tags ?? []}
-          initialPriority={modal.todo.priority}
-          tagSuggestions={tagNames}
-          onClose={() => setModal(null)}
-          onSave={(title, notes, tags, priority) =>
-            saveEdit(modal.todo.id, title, notes, tags, priority)
-          }
+          onEdit={() => {
+            setModal(null);
+            void fetch("/__desktop/edit-todo?id=" + encodeURIComponent(modal.todo.id));
+          }}
         />
       )}
       {tagsModalOpen && (

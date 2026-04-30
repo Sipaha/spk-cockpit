@@ -5,16 +5,20 @@ import { Priority } from "../lib/types";
 import { closeWindow } from "../lib/wails";
 
 export function QuickAddTodo() {
-  const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Uncontrolled textarea — preserves browser-native undo/redo (Ctrl+Z /
+  // Ctrl+Y). Going controlled (value + onChange) breaks the WebKit2GTK
+  // undo stack because React rewrites the DOM value on every keystroke.
 
   useEffect(() => {
     ref.current?.focus();
   }, []);
 
   async function save() {
+    const text = ref.current?.value ?? "";
     const lines = text.split("\n");
     const title = lines[0].trim();
     if (!title) return;
@@ -45,6 +49,21 @@ export function QuickAddTodo() {
     if (e.key === "Escape") {
       e.preventDefault();
       closeWindow();
+      return;
+    }
+    // WebKit2GTK doesn't bind Ctrl+Z / Ctrl+Y to native undo in embedded
+    // webviews; forward via execCommand (still supported by the engine).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      document.execCommand("undo");
+      return;
+    }
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      ((e.shiftKey && (e.key === "z" || e.key === "Z")) || e.key === "y" || e.key === "Y")
+    ) {
+      e.preventDefault();
+      document.execCommand("redo");
     }
   }
 
@@ -55,8 +74,7 @@ export function QuickAddTodo() {
       </div>
       <textarea
         ref={ref}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        defaultValue=""
         onKeyDown={onKeyDown}
         disabled={saving}
         placeholder="Title… (next lines become notes)"

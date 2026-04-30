@@ -30,6 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listTodos: (includeDone = false) =>
     request<Todo[]>(`/api/todos${includeDone ? "?includeDone=1" : ""}`),
+  getTodo: (id: string) => request<Todo>(`/api/todos/${encodeURIComponent(id)}`),
   createTodo: (req: CreateTodoRequest) =>
     request<Todo>("/api/todos", { method: "POST", body: JSON.stringify(req) }),
   updateTodo: (id: string, req: UpdateTodoRequest) =>

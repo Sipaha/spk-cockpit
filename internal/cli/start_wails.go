@@ -252,6 +252,7 @@ func runStart(ctx context.Context) error {
 		main desktop.WindowHandle,
 		openQuickAdd func(),
 		openMeetingPopup func(string),
+		_ func(string),
 	) {
 		// Stash the popup callback so the scheduler's popupCallback closure
 		// can fire it once the window is up. Using atomic.Pointer matches the

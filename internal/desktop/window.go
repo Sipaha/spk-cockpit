@@ -8,6 +8,7 @@ package desktop
 import (
 	"context"
 	"io/fs"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -54,18 +55,28 @@ type Options struct {
 		main WindowHandle,
 		openQuickAdd func(),
 		openMeetingPopup func(meetingID string),
+		openEditTodo func(todoID string),
 	)
 }
 
 // Run starts the Wails event loop. It blocks until the app quits.
 func Run(ctx context.Context, opts Options) error {
+	// openEditTodoPtr breaks the initialization cycle: udsMiddleware needs the
+	// callback at construction time, but runEditTodo needs app which isn't
+	// available until application.New returns. The atomic store below bridges
+	// the gap — same pattern as openPopup in start_wails.go.
+	var openEditTodoPtr atomic.Pointer[func(string)]
 	app := application.New(application.Options{
 		Name:        "spk-cockpit",
 		Description: "Personal productivity tray app",
 		Icon:        opts.IconPNG,
 		Assets: application.AssetOptions{
-			Handler:    application.AssetFileServerFS(opts.FrontendFS),
-			Middleware: udsMiddleware(opts.SocketPath),
+			Handler: application.AssetFileServerFS(opts.FrontendFS),
+			Middleware: udsMiddleware(opts.SocketPath, func(id string) {
+				if fn := openEditTodoPtr.Load(); fn != nil {
+					(*fn)(id)
+				}
+			}),
 		},
 	})
 
@@ -114,9 +125,11 @@ func Run(ctx context.Context, opts Options) error {
 	main := windowHandle{wnd: wnd}
 	openQuickAdd := func() { runQuickAdd(app, opts.SocketPath) }
 	openMeetingPopup := func(id string) { runPopup(app, opts.SocketPath, id) }
+	openEditTodo := func(id string) { runEditTodo(app, opts.SocketPath, id) }
+	openEditTodoPtr.Store(&openEditTodo)
 
 	if opts.OnReady != nil {
-		opts.OnReady(app, main, openQuickAdd, openMeetingPopup)
+		opts.OnReady(app, main, openQuickAdd, openMeetingPopup, openEditTodo)
 	}
 
 	// Wire ctx → app.Quit. The done channel kills the goroutine when
