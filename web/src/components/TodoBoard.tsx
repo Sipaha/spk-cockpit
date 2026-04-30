@@ -227,13 +227,35 @@ export function TodoBoard() {
       if (!activeContainer || !overContainer) return current;
 
       if (activeContainer === overContainer) {
-        // Same-column reorder is handled by dnd-kit's
-        // verticalListSortingStrategy (CSS transforms only) plus our
-        // onDragEnd's final arrayMove. Mutating override here causes an
-        // infinite re-render loop: the arrayMove flips active/over
-        // positions, dnd-kit fires another onDragOver against the new
-        // layout, we arrayMove back, and so on.
-        return current;
+        // Same-column: card-over-card reordering is handled by dnd-kit's
+        // verticalListSortingStrategy (CSS transforms only) — mutating
+        // override on every card-over-card event would loop infinitely
+        // (arrayMove flips active/over positions, dnd-kit re-fires the
+        // event, we flip back). For drop-at-end (over === column body),
+        // dnd-kit's strategy doesn't animate at all, so we DO mutate
+        // override here to surface a visible "card moved to bottom"
+        // preview. No loop because column-over-card produces no further
+        // card-to-card events.
+        if (overId !== overContainer) return current;
+        const items = buckets[activeContainer];
+        const oldIndex = items.findIndex((t) => t.id === activeId);
+        if (oldIndex < 0) return current;
+        // Decide top vs bottom by comparing active's center to column's
+        // center. Drop on the column header / upper half → top of column;
+        // bottom half → end of column.
+        const activeTranslated = active.rect.current.translated;
+        const colRect = over.rect;
+        const isUpperHalf =
+          activeTranslated && colRect
+            ? activeTranslated.top + activeTranslated.height / 2 <
+              colRect.top + colRect.height / 2
+            : false;
+        const newIndex = isUpperHalf ? 0 : items.length - 1;
+        if (oldIndex === newIndex) return current;
+        return {
+          ...buckets,
+          [activeContainer]: arrayMove(items, oldIndex, newIndex),
+        };
       }
 
       // Cross-column relocate.
@@ -253,7 +275,16 @@ export function TodoBoard() {
       // (active.top > over.bottom) so middle-of-card hovers stay "before".
       let newIndex: number;
       if (overId === overContainer) {
-        newIndex = targetItems.length;
+        // Drop on column body — split top/bottom by upper-half heuristic
+        // (header/upper-half → 0, lower-half → end).
+        const activeTranslated = active.rect.current.translated;
+        const colRect = over.rect;
+        const isUpperHalf =
+          activeTranslated && colRect
+            ? activeTranslated.top + activeTranslated.height / 2 <
+              colRect.top + colRect.height / 2
+            : false;
+        newIndex = isUpperHalf ? 0 : targetItems.length;
       } else {
         const overIndex = targetItems.findIndex((t) => t.id === overId);
         if (overIndex < 0) {
@@ -319,7 +350,15 @@ export function TodoBoard() {
     const overId = String(over.id);
     let newIndex: number;
     if (overId === toCol) {
-      newIndex = baseList.length - 1;
+      // Drop on column body — top vs bottom by upper-half heuristic.
+      const activeTranslated = active.rect.current.translated;
+      const colRect = over.rect;
+      const isUpperHalf =
+        activeTranslated && colRect
+          ? activeTranslated.top + activeTranslated.height / 2 <
+            colRect.top + colRect.height / 2
+          : false;
+      newIndex = isUpperHalf ? 0 : baseList.length - 1;
     } else if (overId === activeId) {
       newIndex = oldIndex;
     } else {
@@ -341,13 +380,22 @@ export function TodoBoard() {
       }
     }
 
-    if (sameColumn && oldIndex === newIndex) {
-      setOverride(null);
-      return;
-    }
-
     const postList = arrayMove(baseList, oldIndex, newIndex);
     const idx = postList.findIndex((t) => t.id === activeId);
+
+    // No-op check compares postList ordering to the ORIGINAL bucketize
+    // ordering (not to baseList). baseList may already differ from original
+    // because onDragOver mutated override (e.g. drop-at-end preview moved
+    // the card to the bottom), so oldIndex === newIndex doesn't necessarily
+    // mean "no actual move from the user's POV".
+    if (sameColumn) {
+      const originalIdx = bucketize(todos)[toCol].findIndex((t) => t.id === activeId);
+      if (originalIdx === idx) {
+        setOverride(null);
+        return;
+      }
+    }
+
     const afterId = idx > 0 ? postList[idx - 1].id : undefined;
     const beforeId = idx < postList.length - 1 ? postList[idx + 1].id : undefined;
 
@@ -519,19 +567,30 @@ export function TodoBoard() {
         onDragEnd={onDragEnd}
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {COLUMNS.map((col) => (
-            <Column
-              key={col.id}
-              id={col.id}
-              label={col.label}
-              items={view[col.id]}
-              renderCard={(t) => (
-                <SortableCard key={t.id} todo={t}>
-                  <TodoRow {...cardProps(t)} />
-                </SortableCard>
-              )}
-            />
-          ))}
+          {COLUMNS.map((col) => {
+            // A column is the cross-column landing target when the dragged
+            // card has been relocated INTO it (override.col contains active)
+            // AND the active card's original column was DIFFERENT (so this
+            // isn't just same-column reorder, where the ring would flicker).
+            const isLandingTarget =
+              activeSnapshot != null &&
+              activeSnapshot.status !== col.id &&
+              view[col.id].some((t) => t.id === activeSnapshot.id);
+            return (
+              <Column
+                key={col.id}
+                id={col.id}
+                label={col.label}
+                items={view[col.id]}
+                isLandingTarget={isLandingTarget}
+                renderCard={(t) => (
+                  <SortableCard key={t.id} todo={t}>
+                    <TodoRow {...cardProps(t)} />
+                  </SortableCard>
+                )}
+              />
+            );
+          })}
         </div>
         {/*
           dropAnimation={null} disables dnd-kit's default 250ms transition
@@ -653,15 +712,16 @@ interface ColumnProps {
   label: string;
   items: Todo[];
   renderCard: (t: Todo) => React.ReactNode;
+  isLandingTarget: boolean;
 }
 
-function Column({ id, label, items, renderCard }: ColumnProps) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+function Column({ id, label, items, renderCard, isLandingTarget }: ColumnProps) {
+  const { setNodeRef } = useDroppable({ id });
   return (
     <div
       ref={setNodeRef}
       className={`bg-bgsub rounded-lg p-3 flex flex-col gap-3 min-h-48 transition-colors ${
-        isOver ? "ring-1 ring-accent" : ""
+        isLandingTarget ? "ring-1 ring-accent" : ""
       }`}
     >
       <h3 className="text-fgmute text-[11px] uppercase tracking-wider font-semibold flex justify-between items-center px-1">
