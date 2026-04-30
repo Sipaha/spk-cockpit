@@ -55,20 +55,67 @@ function bucketize(todos: Todo[]): Buckets {
     }
     if (t.status in out) out[t.status].push(t);
   }
-  // We can't trust the incoming todos array's order: SSE updates replace a
-  // todo in place without reshuffling, so a sortOrder change leaves the
-  // array stale (the moved card stays in the OLD slot of the array). Sort
-  // each visible bucket the same way the SQL ORDER BY does it.
-  const sortBucket = (xs: Todo[]) =>
-    xs.sort((a, b) =>
-      b.sortOrder !== a.sortOrder
-        ? b.sortOrder - a.sortOrder
-        : b.createdAt - a.createdAt,
-    );
-  sortBucket(out.open);
-  sortBucket(out.in_progress);
-  sortBucket(out.done);
+  // open/in_progress: manual ordering driven by sortOrder DESC (matches SQL).
+  // done: automatic by completion time — newest first. Manual reordering
+  // inside Done is intentionally disabled (see onDragEnd same-column-done
+  // guard), so sortOrder is meaningless there; doneAt is the single source.
+  const byManualOrder = (a: Todo, b: Todo) =>
+    b.sortOrder !== a.sortOrder
+      ? b.sortOrder - a.sortOrder
+      : b.createdAt - a.createdAt;
+  out.open.sort(byManualOrder);
+  out.in_progress.sort(byManualOrder);
+  out.done.sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
   return out;
+}
+
+interface DoneGroup {
+  key: string; // yyyy-mm-dd of doneAt local
+  label: string;
+  items: Todo[];
+}
+
+function ymdLocalFromDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function ymdLocal(unix: number): string {
+  return ymdLocalFromDate(new Date(unix * 1000));
+}
+
+function labelForDate(key: string): string {
+  // Use Date arithmetic for "yesterday" (setDate with delta) instead of
+  // subtracting 86400 seconds — the latter is DST-unsafe (during a DST
+  // transition the local day boundary doesn't sit exactly 24h from "now").
+  const todayD = new Date();
+  const yesterdayD = new Date(todayD);
+  yesterdayD.setDate(todayD.getDate() - 1);
+  const today = ymdLocalFromDate(todayD);
+  const yesterday = ymdLocalFromDate(yesterdayD);
+  if (key === today) return "Today";
+  if (key === yesterday) return "Yesterday";
+  // dd.mm (Wkd)
+  const [y, m, d] = key.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const wkd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
+  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")} (${wkd})`;
+}
+
+function groupDoneByDate(items: Todo[]): DoneGroup[] {
+  // items already sorted by doneAt DESC, so iteration order yields date
+  // groups in correct (newest first) order without re-sorting keys.
+  const groups: DoneGroup[] = [];
+  for (const t of items) {
+    if (!t.doneAt) continue;
+    const key = ymdLocal(t.doneAt);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.items.push(t);
+    } else {
+      groups.push({ key, label: labelForDate(key), items: [t] });
+    }
+  }
+  return groups;
 }
 
 type ModalState =
@@ -334,6 +381,13 @@ export function TodoBoard() {
       return;
     }
     const sameColumn = fromCol === toCol;
+    // Done has automatic ordering (by doneAt DESC); manual reorder within
+    // Done is suppressed. Cross-column drops INTO Done still go through
+    // the normal path so the card gets status="done" + a fresh doneAt.
+    if (sameColumn && toCol === "done") {
+      setOverride(null);
+      return;
+    }
 
     // Compute the final post-drop list. For cross-column, onDragOver already
     // placed the card in view[toCol]; we re-position it via arrayMove using
@@ -576,6 +630,7 @@ export function TodoBoard() {
               activeSnapshot != null &&
               activeSnapshot.status !== col.id &&
               view[col.id].some((t) => t.id === activeSnapshot.id);
+            const doneGroups = col.id === "done" ? groupDoneByDate(view.done) : undefined;
             return (
               <Column
                 key={col.id}
@@ -583,6 +638,7 @@ export function TodoBoard() {
                 label={col.label}
                 items={view[col.id]}
                 isLandingTarget={isLandingTarget}
+                doneGroups={doneGroups}
                 renderCard={(t) => (
                   <SortableCard key={t.id} todo={t}>
                     <TodoRow {...cardProps(t)} />
@@ -713,9 +769,13 @@ interface ColumnProps {
   items: Todo[];
   renderCard: (t: Todo) => React.ReactNode;
   isLandingTarget: boolean;
+  // Done column renders with date headers (Today / Yesterday / dd.mm (Wkd))
+  // grouping its items. Other columns leave this undefined and fall back
+  // to a flat list.
+  doneGroups?: DoneGroup[];
 }
 
-function Column({ id, label, items, renderCard, isLandingTarget }: ColumnProps) {
+function Column({ id, label, items, renderCard, isLandingTarget, doneGroups }: ColumnProps) {
   const { setNodeRef } = useDroppable({ id });
   return (
     <div
@@ -733,7 +793,16 @@ function Column({ id, label, items, renderCard, isLandingTarget }: ColumnProps) 
         strategy={verticalListSortingStrategy}
       >
         <div className="flex flex-col gap-2">
-          {items.map((t) => renderCard(t))}
+          {doneGroups
+            ? doneGroups.map((g) => (
+                <div key={g.key} className="flex flex-col gap-2">
+                  <div className="text-fgmute/80 text-[10px] uppercase tracking-wider font-semibold mt-2 first:mt-0 px-1">
+                    {g.label}
+                  </div>
+                  {g.items.map((t) => renderCard(t))}
+                </div>
+              ))
+            : items.map((t) => renderCard(t))}
         </div>
       </SortableContext>
       {items.length === 0 && (
