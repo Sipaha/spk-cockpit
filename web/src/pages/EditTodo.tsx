@@ -20,6 +20,12 @@ function splitTitleNotes(text: string): { title: string; notes: string } {
   return { title: text.slice(0, idx).trim(), notes: text.slice(idx + 1) };
 }
 
+interface Snapshot {
+  value: string;
+  selStart: number;
+  selEnd: number;
+}
+
 export function EditTodo() {
   const [params] = useSearchParams();
   const todoId = params.get("id") ?? "";
@@ -28,48 +34,80 @@ export function EditTodo() {
   const [priority, setPriority] = useState<P>(Priority.Normal);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(!!todoId);
+  // initialText drives BOTH gating (don't render textarea until known) and
+  // the textarea's defaultValue when it finally mounts. Keeping it null
+  // until either (a) create flow starts (set to "") or (b) edit-fetch
+  // resolves means the textarea mounts ONCE with the right defaultValue,
+  // so React's uncontrolled-input semantics actually work. Setting
+  // ref.current.value AFTER an empty mount loses the initial value as soon
+  // as the user touches it (and was the cause of "subsequent opens show
+  // empty content").
+  const [initialText, setInitialText] = useState<string | null>(todoId ? null : "");
   const [err, setErr] = useState<string | null>(null);
 
-  // Uncontrolled textarea — preserves browser-native undo/redo (Ctrl+Z /
-  // Ctrl+Y). Going controlled (value + onChange) breaks the WebKit2GTK
-  // undo stack because React rewrites the DOM value on every keystroke.
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Manual undo/redo stack. WebKit2GTK in the v3 alpha.78 webview doesn't
+  // honour Ctrl+Z / Ctrl+Y on plain <textarea> — neither the native binding
+  // nor document.execCommand("undo") drives the input element's history.
+  // We snapshot the value+selection on every meaningful edit and replay
+  // them on the shortcut.
+  const undoRef = useRef<Snapshot[]>([]);
+  const redoRef = useRef<Snapshot[]>([]);
 
   // Load tag suggestions once on mount (independent of shared store state).
   useEffect(() => {
     api.listTags().then((ts) => setTagSuggestions(ts.map((t) => t.name))).catch(() => {});
   }, []);
 
-  // If editing, fetch the existing todo and pre-populate form fields.
+  // If editing, fetch the existing todo. Pre-populate state ONLY — the
+  // textarea reads initialText at mount via defaultValue (see above).
   useEffect(() => {
-    if (!todoId) {
-      // Create flow: focus the textarea immediately.
-      ref.current?.focus();
-      return;
-    }
-    setLoading(true);
+    if (!todoId) return;
     api
       .getTodo(todoId)
       .then((todo) => {
-        if (ref.current) {
-          const initialText = todo.title + (todo.notes ? "\n" + todo.notes : "");
-          ref.current.value = initialText;
-          ref.current.focus();
-          // Cursor at end of title so user can keep typing without clearing.
-          const titleEnd = initialText.indexOf("\n");
-          const pos = titleEnd === -1 ? initialText.length : titleEnd;
-          ref.current.setSelectionRange(pos, pos);
-        }
+        const txt = todo.title + (todo.notes ? "\n" + todo.notes : "");
         setTags(todo.tags ?? []);
         setPriority(todo.priority);
+        setInitialText(txt);
       })
       .catch((e) => {
         setErr(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => setLoading(false));
+        setInitialText(""); // unblock the editor in error state
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Once the textarea exists with a known initialText, focus and place
+  // cursor at end of title.
+  useEffect(() => {
+    if (initialText === null) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const titleEnd = initialText.indexOf("\n");
+    const pos = titleEnd === -1 ? initialText.length : titleEnd;
+    el.setSelectionRange(pos, pos);
+  }, [initialText]);
+
+  function snapshot(stack: React.MutableRefObject<Snapshot[]>) {
+    const el = ref.current;
+    if (!el) return;
+    stack.current.push({
+      value: el.value,
+      selStart: el.selectionStart ?? 0,
+      selEnd: el.selectionEnd ?? 0,
+    });
+    if (stack.current.length > 200) stack.current.shift();
+  }
+
+  function restore(snap: Snapshot) {
+    const el = ref.current;
+    if (!el) return;
+    el.value = snap.value;
+    el.setSelectionRange(snap.selStart, snap.selEnd);
+  }
 
   async function save() {
     const text = ref.current?.value ?? "";
@@ -106,11 +144,15 @@ export function EditTodo() {
       closeWindow();
       return;
     }
-    // WebKit2GTK doesn't bind Ctrl+Z / Ctrl+Y to native undo in embedded
-    // webviews; forward via execCommand (still supported by the engine).
+    // Custom undo: pop pre-edit snapshot from undoRef, push current state
+    // to redoRef so Ctrl+Y can return.
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
       e.preventDefault();
-      document.execCommand("undo");
+      const snap = undoRef.current.pop();
+      if (snap) {
+        snapshot(redoRef);
+        restore(snap);
+      }
       return;
     }
     if (
@@ -118,11 +160,26 @@ export function EditTodo() {
       ((e.shiftKey && (e.key === "z" || e.key === "Z")) || e.key === "y" || e.key === "Y")
     ) {
       e.preventDefault();
-      document.execCommand("redo");
+      const snap = redoRef.current.pop();
+      if (snap) {
+        snapshot(undoRef);
+        restore(snap);
+      }
+      return;
+    }
+    // For any value-mutating keystroke, snapshot the PRE-edit state so a
+    // subsequent Ctrl+Z can return to it. We don't try to coalesce
+    // consecutive characters into a single undo entry (vscode-style) —
+    // char-by-char is acceptable for this small editor.
+    const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    const isEdit = isPrintable || e.key === "Backspace" || e.key === "Delete" || e.key === "Enter" || e.key === "Tab";
+    if (isEdit) {
+      snapshot(undoRef);
+      redoRef.current = []; // any new edit invalidates redo history
     }
   }
 
-  if (loading) {
+  if (initialText === null) {
     return (
       <div className="bg-bg text-fg min-h-screen flex flex-col p-4 gap-3">
         <div className="text-fgmute text-sm">loading…</div>
@@ -137,7 +194,7 @@ export function EditTodo() {
       </div>
       <textarea
         ref={ref}
-        defaultValue=""
+        defaultValue={initialText}
         onKeyDown={onKeyDown}
         disabled={saving}
         placeholder="Title… (next lines become notes)"
