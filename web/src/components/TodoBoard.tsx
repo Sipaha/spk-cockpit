@@ -4,11 +4,12 @@ import {
   DragOverlay,
   PointerSensor,
   closestCorners,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
+import type { CollisionDetection, DragEndEvent, DragOverEvent, DragStartEvent } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
@@ -151,6 +152,26 @@ export function TodoBoard() {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
+  // Custom collision detection. closestCorners (the v0 strategy) reports the
+  // numerically-closest droppable corner, which for cross-column drag picks
+  // the wrong card when the cursor sits in column body well below all cards
+  // — the last card's bottom corner stays "closest" enough that the column
+  // never wins, so "drop at end" becomes "drop at second-to-last".
+  // pointerWithin is precise: it only returns droppables whose rect contains
+  // the cursor. With overlapping droppables (cards inside their column),
+  // we prefer the card hit (more specific) and fall back to the column when
+  // the cursor is in column body only. closestCorners stays as a fallback
+  // for edges where the cursor is briefly outside any droppable rect.
+  const collisionDetection: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      const colIds = new Set<string>(["open", "in_progress", "done"]);
+      const cardCollisions = pointerCollisions.filter((c) => !colIds.has(String(c.id)));
+      return cardCollisions.length > 0 ? cardCollisions : pointerCollisions;
+    }
+    return closestCorners(args);
+  };
+
   function findContainer(id: string): TodoStatus | null {
     if (id === "open" || id === "in_progress" || id === "done") return id;
     for (const status of ["open", "in_progress", "done"] as const) {
@@ -164,64 +185,176 @@ export function TodoBoard() {
     setActiveSnapshot(todos.find((t) => t.id === id) ?? null);
   }
 
+  // Multi-container sortable pattern (per dnd-kit's "Multiple Containers"
+  // example). dnd-kit's verticalListSortingStrategy reorders cards
+  // visually via CSS transforms WITHIN a SortableContext, but it doesn't
+  // mutate our items array. For our after/before-id move API to see the
+  // user's true drop position, we keep `override` (and therefore `view`)
+  // in sync with the live drag — both for cross-column relocations and
+  // for same-column reorders. onDragEnd just reads the final view[toCol]
+  // and computes afterId/beforeId from the now-authoritative ordering.
+  function onDragOver(e: DragOverEvent) {
+    const { active, over } = e;
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+
+    setOverride((current) => {
+      // Build the working buckets from CURRENT (latest committed override),
+      // not from `view` (closure-captured, may be one render behind when
+      // dnd-kit fires events faster than React commits).
+      const buckets: Buckets = current ?? {
+        open: bucketize(todos).open,
+        in_progress: bucketize(todos).in_progress,
+        done: bucketize(todos).done,
+        cancelled: [],
+        backlog: [],
+      };
+
+      // Re-compute containers against the latest buckets — they reflect the
+      // running override, so previous onDragOver relocations are visible.
+      const findIn = (id: string): TodoStatus | null => {
+        if (id === "open" || id === "in_progress" || id === "done") return id;
+        for (const status of ["open", "in_progress", "done"] as const) {
+          if (buckets[status].some((t) => t.id === id)) return status;
+        }
+        return null;
+      };
+      const activeContainer = findIn(activeId);
+      const overContainer = findIn(overId);
+      if (!activeContainer || !overContainer) return current;
+
+      if (activeContainer === overContainer) {
+        // Same-column reorder is handled by dnd-kit's
+        // verticalListSortingStrategy (CSS transforms only) plus our
+        // onDragEnd's final arrayMove. Mutating override here causes an
+        // infinite re-render loop: the arrayMove flips active/over
+        // positions, dnd-kit fires another onDragOver against the new
+        // layout, we arrayMove back, and so on.
+        return current;
+      }
+
+      // Cross-column relocate.
+      const sourceItems = buckets[activeContainer];
+      const targetItems = buckets[overContainer];
+      const activeIndex = sourceItems.findIndex((t) => t.id === activeId);
+      if (activeIndex < 0) return current;
+
+      const movedItem = { ...sourceItems[activeIndex], status: overContainer };
+
+      // Insert at the over-card's index by default (matches dnd-kit's
+      // verticalListSortingStrategy visual). Special-case "dragged FULLY
+      // past the over card" — closestCorners keeps reporting the last
+      // card as `over` even when the cursor is well below it, so without
+      // this check `drop into empty column space` lands on the
+      // second-to-last slot. Threshold is the over card's BOTTOM edge
+      // (active.top > over.bottom) so middle-of-card hovers stay "before".
+      let newIndex: number;
+      if (overId === overContainer) {
+        newIndex = targetItems.length;
+      } else {
+        const overIndex = targetItems.findIndex((t) => t.id === overId);
+        if (overIndex < 0) {
+          newIndex = targetItems.length;
+        } else {
+          const activeTranslated = active.rect.current.translated;
+          const overRect = over.rect;
+          const isPast =
+            activeTranslated && overRect
+              ? activeTranslated.top > overRect.top + overRect.height
+              : false;
+          newIndex = overIndex + (isPast ? 1 : 0);
+        }
+      }
+
+      return {
+        ...buckets,
+        [activeContainer]: sourceItems.filter((t) => t.id !== activeId),
+        [overContainer]: [
+          ...targetItems.slice(0, newIndex),
+          movedItem,
+          ...targetItems.slice(newIndex),
+        ],
+      };
+    });
+  }
+
   async function onDragEnd(e: DragEndEvent) {
     setActiveSnapshot(null);
-    const id = String(e.active.id);
-    const overId = e.over ? String(e.over.id) : null;
-    if (!overId) return;
-
-    const fromCol = findContainer(id);
-    const toCol = findContainer(overId);
-    if (!fromCol || !toCol) return;
-
-    const moved = todos.find((t) => t.id === id);
-    if (!moved) return;
-
-    const sameColumn = fromCol === toCol;
-    // Build the post-drop ordered list for the target column. For same-
-    // column reorders we use dnd-kit's arrayMove convention so the
-    // landing slot matches what the visual preview was showing — over.id
-    // is the card the active should swap with at the drop moment, and
-    // arrayMove handles the shift direction. For cross-column drops we
-    // splice the moved card into the target list at the over-card's
-    // position (or at the end when the drop hits the column body).
-    let postList: Todo[];
-    if (sameColumn) {
-      const list = view[fromCol];
-      const oldIndex = list.findIndex((t) => t.id === id);
-      const newIndex =
-        overId === toCol
-          ? list.length - 1
-          : list.findIndex((t) => t.id === overId);
-      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
-      postList = arrayMove(list, oldIndex, newIndex);
-    } else {
-      const target = view[toCol];
-      let insertAt: number;
-      if (overId === toCol) {
-        insertAt = target.length;
-      } else {
-        const i = target.findIndex((t) => t.id === overId);
-        insertAt = i >= 0 ? i : target.length;
-      }
-      postList = [...target.slice(0, insertAt), moved, ...target.slice(insertAt)];
+    const { active, over } = e;
+    if (!over) {
+      // Drop outside any droppable — discard the in-flight visual override.
+      setOverride(null);
+      return;
     }
 
-    // The kanban no longer computes sort_order. We tell the server "place
-    // this card after AfterID and/or before BeforeID" and let it pick a
-    // value in one transaction (and rebalance the column when the gap is
-    // too tight). Frontend's only job is to derive the neighbors from the
-    // post-drop list and project the move optimistically.
-    const idx = postList.findIndex((t) => t.id === id);
+    const activeId = String(active.id);
+    const moved = todos.find((t) => t.id === activeId);
+    if (!moved) {
+      setOverride(null);
+      return;
+    }
+    const fromCol = moved.status as TodoStatus;
+    const toCol = findContainer(activeId);
+    if (!toCol) {
+      setOverride(null);
+      return;
+    }
+    const sameColumn = fromCol === toCol;
+
+    // Compute the final post-drop list. For cross-column, onDragOver already
+    // placed the card in view[toCol]; we re-position it via arrayMove using
+    // the final overId so the drop matches the user's last cursor position
+    // (closer than the last onDragOver fire). For same-column, view[toCol]
+    // == bucketize(todos)[toCol] (no override changes) so arrayMove operates
+    // on the original ordering.
+    const baseList = view[toCol].slice();
+    const oldIndex = baseList.findIndex((t) => t.id === activeId);
+    if (oldIndex < 0) {
+      setOverride(null);
+      return;
+    }
+    const overId = String(over.id);
+    let newIndex: number;
+    if (overId === toCol) {
+      newIndex = baseList.length - 1;
+    } else if (overId === activeId) {
+      newIndex = oldIndex;
+    } else {
+      const overIdx = baseList.findIndex((t) => t.id === overId);
+      if (overIdx < 0) {
+        newIndex = oldIndex;
+      } else {
+        // For arrayMove convention: target index is over's index. Account for
+        // "dragged fully past over" as one slot further.
+        const activeTranslated = active.rect.current.translated;
+        const overRect = over.rect;
+        const isPast =
+          activeTranslated && overRect
+            ? activeTranslated.top > overRect.top + overRect.height
+            : false;
+        newIndex = isPast ? overIdx + 1 : overIdx;
+        // Clamp — arrayMove past length-1 has no effect.
+        if (newIndex > baseList.length - 1) newIndex = baseList.length - 1;
+      }
+    }
+
+    if (sameColumn && oldIndex === newIndex) {
+      setOverride(null);
+      return;
+    }
+
+    const postList = arrayMove(baseList, oldIndex, newIndex);
+    const idx = postList.findIndex((t) => t.id === activeId);
     const afterId = idx > 0 ? postList[idx - 1].id : undefined;
     const beforeId = idx < postList.length - 1 ? postList[idx + 1].id : undefined;
 
-    const updatedPostList = postList.map((t) =>
-      t.id === id
-        ? { ...t, status: sameColumn ? t.status : toCol }
-        : t,
-    );
-
+    // Persist `postList` as the optimistic override so it survives the await
+    // below. For same-column we just write the reordered postList. For
+    // cross-column view[fromCol] already has the card removed (onDragOver
+    // did that), and view[toCol] now becomes postList.
     const next: Buckets = {
       open: view.open.slice(),
       in_progress: view.in_progress.slice(),
@@ -229,18 +362,13 @@ export function TodoBoard() {
       cancelled: view.cancelled,
       backlog: view.backlog,
     };
-    if (sameColumn) {
-      next[fromCol] = updatedPostList;
-    } else {
-      next[fromCol] = next[fromCol].filter((t) => t.id !== id);
-      next[toCol] = updatedPostList;
-    }
+    next[toCol] = postList;
     setOverride(next);
     const seq = ++moveSeqRef.current;
-    setPendingMove({ seq, id, targetStatus: toCol });
+    setPendingMove({ seq, id: activeId, targetStatus: toCol });
 
     try {
-      await api.moveTodo(id, {
+      await api.moveTodo(activeId, {
         afterId,
         beforeId,
         status: sameColumn ? undefined : toCol,
@@ -385,8 +513,9 @@ export function TodoBoard() {
       {error && <div className="text-urgent">error: {error}</div>}
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={collisionDetection}
         onDragStart={onDragStart}
+        onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -404,7 +533,16 @@ export function TodoBoard() {
             />
           ))}
         </div>
-        <DragOverlay>
+        {/*
+          dropAnimation={null} disables dnd-kit's default 250ms transition
+          that animates the overlay back to the SOURCE element's bounding
+          box on release. Since onDragEnd applies an optimistic override
+          that places the card in the TARGET column synchronously, the
+          default animation looks like "card flies back to origin, then
+          jumps to target" — confusing. With null, the overlay vanishes
+          instantly and the optimistic re-render is what the user sees.
+        */}
+        <DragOverlay dropAnimation={null}>
           {activeSnapshot && (
             <div className="bg-bg border border-accent rounded shadow-lg">
               <TodoRow {...cardProps(activeSnapshot)} />
