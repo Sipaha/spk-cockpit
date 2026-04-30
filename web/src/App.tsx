@@ -3,7 +3,6 @@ import { Todos } from "./pages/Todos";
 import { Popover } from "./pages/Popover";
 import { Calendar } from "./pages/Calendar";
 import { Settings } from "./pages/Settings";
-import { Standup } from "./pages/Standup";
 import { MeetingPopup } from "./pages/MeetingPopup";
 import { QuickAddTodo } from "./pages/QuickAddTodo";
 import { Trash } from "./pages/Trash";
@@ -45,7 +44,6 @@ function MainShell() {
         <nav className="flex flex-col gap-1">
           {navItem("/", "Todos")}
           {navItem("/calendar", "Calendar")}
-          {navItem("/standup", "Standup")}
           {navItem("/settings", "Settings")}
         </nav>
       </aside>
@@ -53,7 +51,6 @@ function MainShell() {
         <Routes>
           <Route path="/" element={<Todos />} />
           <Route path="/calendar" element={<Calendar />} />
-          <Route path="/standup" element={<Standup />} />
           <Route path="/trash" element={<Trash />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Todos />} />

@@ -1,6 +1,6 @@
 # spk-cockpit
 
-A personal productivity tray app for Linux. Manage todos, your calendar, time-tracking, and a daily standup — all from a single Go binary with an embedded React UI that lives in your system tray and stays out of your way.
+A personal productivity tray app for Linux. Manage todos, your calendar, and time-tracking — all from a single Go binary with an embedded React UI that lives in your system tray and stays out of your way.
 
 Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 
@@ -10,8 +10,7 @@ Licensed under [Apache 2.0](LICENSE) — free for personal and commercial use.
 - **Time tracking** — start/stop a timer on any todo. Only one runs at a time; daily totals are aggregated automatically.
 - **Calendar** — read-only sync from any CalDAV server (Yandex, Fastmail, iCloud, Nextcloud, Posteo, mailbox.org, …). DBus desktop notifications fire N minutes before each meeting (default 5; per-meeting override) and a separate small popup window opens 1 minute before.
 - **Markdown notes** attached to meetings or todos, with revision history.
-- **Daily standup helper** — auto-aggregates "Yesterday / Today / Blockers" from completed todos, your GitLab commits, and any HTTP-queryable task tracker (configurable URL + token). One-click copy as markdown.
-- **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open window, open standup, quick-add todo, stop timer).
+- **Info-rich tray menu** — live status (active timer, next meeting, overdue count, sync errors) and quick actions (open window, quick-add todo, stop timer).
 - **Encrypted secrets** — AES-256-GCM with the master key sourced from the OS keyring (libsecret on Linux).
 - **Single self-contained binary** — Go server + embedded React/Vite/Tailwind UI, served over a Unix domain socket. CGO links libgtk-3, libwebkit2gtk-4.1, and libsecret-1 (see Build below). No Docker, no daemon manager other than systemd-user.
 
@@ -61,10 +60,6 @@ spk-cockpit meeting list -d 14
 spk-cockpit meeting next
 echo "my-app-password" | spk-cockpit secret set caldav_password
 
-# standup
-spk-cockpit standup                       # markdown for today
-spk-cockpit standup --date 2026-04-26     # markdown for any day
-
 # lifecycle
 spk-cockpit                               # launches tray + window + daemon (default action)
 spk-cockpit install --autostart           # systemd-user unit
@@ -89,20 +84,6 @@ curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
 echo "my-app-password" | spk-cockpit secret set caldav_password
 ```
 
-GitLab and Tracker integrations for the standup helper are optional; configure them via:
-
-```bash
-spk-cockpit secret set gitlab_token       # personal access token, read_api scope
-
-curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
-     -d '{"value": "https://gitlab.example.com"}' http://unix/api/kv/gitlab.url
-curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
-     -d '{"value": "alice"}' http://unix/api/kv/gitlab.author_username
-
-# Task tracker — same pattern: tracker.url and tracker.username via /api/kv,
-# and `spk-cockpit secret set tracker_token` for the bearer token.
-```
-
 ## Filesystem layout
 
 | Path | Contents |
@@ -118,9 +99,9 @@ Override paths via `SPK_COCKPIT_DATA_DIR`, `SPK_COCKPIT_STATE_DIR`, `SPK_COCKPIT
 
 The daemon owns one tray icon, one Wails window (hide-on-close), a Unix-domain-socket HTTP server (REST + SSE) at `~/.local/state/spk-cockpit/cockpit.sock`, and a handful of background workers (CalDAV syncer, notification scheduler, GC). The CLI is a thin client over the same UDS — there is no second SQLite path.
 
-Sync is **read-only** in v1: CalDAV updates the local mirror, manual meetings stay local. GitLab and Tracker are queried on demand by the standup aggregator.
+Sync is **read-only** in v1: CalDAV updates the local mirror, manual meetings stay local.
 
-The domain layer (`internal/{todo,meeting,timer,note,secret,standup}`) is transport-agnostic — services take repository interfaces and a `Clock`, and know nothing about HTTP, Wails, or SQLite directly. This keeps the door open for a future MCP transport.
+The domain layer (`internal/{todo,meeting,timer,note,secret}`) is transport-agnostic — services take repository interfaces and a `Clock`, and know nothing about HTTP, Wails, or SQLite directly. This keeps the door open for a future MCP transport.
 
 ## Development
 

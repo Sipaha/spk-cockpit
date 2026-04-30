@@ -29,11 +29,8 @@ import (
 	"github.com/spk/spk-cockpit/internal/paths"
 	"github.com/spk/spk-cockpit/internal/secret"
 	"github.com/spk/spk-cockpit/internal/server"
-	"github.com/spk/spk-cockpit/internal/standup"
 	"github.com/spk/spk-cockpit/internal/store"
 	"github.com/spk/spk-cockpit/internal/sync/caldav"
-	"github.com/spk/spk-cockpit/internal/sync/gitlab"
-	"github.com/spk/spk-cockpit/internal/sync/tracker"
 	"github.com/spk/spk-cockpit/internal/timer"
 	"github.com/spk/spk-cockpit/internal/todo"
 	"github.com/spk/spk-cockpit/internal/tray"
@@ -114,22 +111,6 @@ func runStart(ctx context.Context) error {
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-
-	gitlabSrc := buildGitLabSource(ctx, kv, secretSvc, logger)
-	trackerSrc := buildTrackerSource(ctx, kv, secretSvc, logger)
-	glAuthor, _, _ := kv.Get(ctx, "gitlab.author_username")
-	trackerUser, _, _ := kv.Get(ctx, "tracker.username")
-
-	standupSvc := standup.NewService(standup.Config{
-		Todos:        todoSvc,
-		Events:       eventRepo,
-		GitLab:       gitlabSrc,
-		GitLabAuthor: glAuthor,
-		Tracker:      trackerSrc,
-		TrackerUser:  trackerUser,
-		Clock:        clock.Real(),
-	})
-	srv.Deps().Standup = standupSvc
 
 	// CalDAV syncer is created lazily so that saving credentials in the running
 	// Settings UI takes effect without a daemon restart.
@@ -280,10 +261,6 @@ func runStart(ctx context.Context) error {
 		openPopup.Store(&openMeetingPopup)
 
 		trayActions := tray.Actions{
-			OpenStandup: func() {
-				main.Show()
-				main.Navigate("/standup")
-			},
 			StopTimer: func() {
 				ctx := context.Background()
 				active, err := timerSvc.Active(ctx)
@@ -355,45 +332,6 @@ func loadCaldavConfig(secrets *secret.Service, kv todo.KvRepo) *caldav.Config {
 		return nil
 	}
 	return &caldav.Config{BaseURL: url, Username: username, Password: password}
-}
-
-// buildGitLabSource constructs a GitLab sync source from KV config and secrets.
-// Returns nil if any required value is missing or init fails.
-func buildGitLabSource(ctx context.Context, kv todo.KvRepo, secrets *secret.Service, logger *slog.Logger) gitlab.Source {
-	url, _, _ := kv.Get(ctx, "gitlab.url")
-	if url == "" {
-		return nil
-	}
-	tok, err := secrets.Get(ctx, "gitlab_token")
-	if err != nil || tok == "" {
-		return nil
-	}
-	src, err := gitlab.NewHTTPSource(gitlab.Config{BaseURL: url, Token: tok})
-	if err != nil {
-		logger.Warn("gitlab source disabled", "err", err)
-		return nil
-	}
-	return src
-}
-
-// buildTrackerSource constructs a tracker sync source from KV config and secrets.
-// Returns nil if any required value is missing or init fails.
-func buildTrackerSource(ctx context.Context, kv todo.KvRepo, secrets *secret.Service, logger *slog.Logger) tracker.Source {
-	url, _, _ := kv.Get(ctx, "tracker.url")
-	user, _, _ := kv.Get(ctx, "tracker.username")
-	if url == "" || user == "" {
-		return nil
-	}
-	tok, err := secrets.Get(ctx, "tracker_token")
-	if err != nil || tok == "" {
-		return nil
-	}
-	src, err := tracker.NewHTTPSource(tracker.Config{BaseURL: url, Username: user, Token: tok})
-	if err != nil {
-		logger.Warn("tracker source disabled", "err", err)
-		return nil
-	}
-	return src
 }
 
 // lazySync defers caldav syncer construction to first use, then memoizes the

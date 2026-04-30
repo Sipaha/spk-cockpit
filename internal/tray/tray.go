@@ -23,7 +23,6 @@ import (
 // Actions wires tray menu clicks to daemon-side callbacks. These are populated
 // by start.go where they have access to the relevant services.
 type Actions struct {
-	OpenStandup  func()
 	StopTimer    func()
 	QuickAddTodo func()
 	OpenMeeting  func(meetingID string)
@@ -152,9 +151,6 @@ func (c *Controller) refreshMenu() {
 	menu.Add("Open").OnClick(func(*application.Context) {
 		c.toggleWindow()
 	})
-	if c.actions.OpenStandup != nil {
-		menu.Add("Open Standup").OnClick(func(*application.Context) { c.actions.OpenStandup() })
-	}
 	if c.actions.QuickAddTodo != nil {
 		menu.Add("Quick Add Todo").OnClick(func(*application.Context) { c.actions.QuickAddTodo() })
 	}
@@ -178,7 +174,7 @@ func (c *Controller) setState(mut func(*TooltipState)) {
 
 // consume is the live-update goroutine. Mirrors v2's Subscriber.Run dispatch.
 // Three input sources: ctx cancellation, bus events, and a 30-second tick
-// that re-runs all refreshers (keeps the "Standup in 5m" countdown advancing).
+// that re-runs all refreshers (keeps the meeting countdown advancing).
 func (c *Controller) consume(
 	ctx context.Context,
 	bus *eventbus.Bus,

@@ -60,7 +60,7 @@ func udsMiddleware(socketPath string) application.Middleware {
 			}
 			// SPA fallback. v3's AssetFileServerFS has no built-in fallback —
 			// extension-less deep-link paths (/quick-add-todo, /popup-meeting,
-			// /standup, /calendar/...) don't exist as files in the embed and
+			// /calendar/...) don't exist as files in the embed and
 			// would 404 with a blank webview. Rewrite the request URL to "/"
 			// so the asset server returns index.html; the webview's address
 			// stays at the original path so React Router renders the matching
