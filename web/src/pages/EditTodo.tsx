@@ -50,10 +50,13 @@ export function EditTodo() {
   // Manual undo/redo stack. WebKit2GTK in the v3 alpha.78 webview doesn't
   // honour Ctrl+Z / Ctrl+Y on plain <textarea> — neither the native binding
   // nor document.execCommand("undo") drives the input element's history.
-  // We snapshot the value+selection on every meaningful edit and replay
-  // them on the shortcut.
+  // We snapshot the value+selection on meaningful edits and replay them
+  // on the shortcut. Consecutive typing within COALESCE_MS coalesces into
+  // a single undo entry so Ctrl+Z removes whole words/typing-bursts at a
+  // time instead of char-by-char (vscode-style).
   const undoRef = useRef<Snapshot[]>([]);
   const redoRef = useRef<Snapshot[]>([]);
+  const lastEditAtRef = useRef(0);
 
   // Load tag suggestions once on mount (independent of shared store state).
   useEffect(() => {
@@ -145,8 +148,10 @@ export function EditTodo() {
       return;
     }
     // Custom undo: pop pre-edit snapshot from undoRef, push current state
-    // to redoRef so Ctrl+Y can return.
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
+    // to redoRef so Ctrl+Y can return. Use e.code (physical key, layout-
+    // independent) — e.key === "z" doesn't match on non-Latin layouts
+    // (Russian Cyrillic gives e.key === "я" for Ctrl+Z).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === "KeyZ") {
       e.preventDefault();
       const snap = undoRef.current.pop();
       if (snap) {
@@ -157,7 +162,7 @@ export function EditTodo() {
     }
     if (
       (e.ctrlKey || e.metaKey) &&
-      ((e.shiftKey && (e.key === "z" || e.key === "Z")) || e.key === "y" || e.key === "Y")
+      ((e.shiftKey && e.code === "KeyZ") || e.code === "KeyY")
     ) {
       e.preventDefault();
       const snap = redoRef.current.pop();
@@ -167,16 +172,35 @@ export function EditTodo() {
       }
       return;
     }
-    // For any value-mutating keystroke, snapshot the PRE-edit state so a
-    // subsequent Ctrl+Z can return to it. We don't try to coalesce
-    // consecutive characters into a single undo entry (vscode-style) —
-    // char-by-char is acceptable for this small editor.
-    const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
-    const isEdit = isPrintable || e.key === "Backspace" || e.key === "Delete" || e.key === "Enter" || e.key === "Tab";
-    if (isEdit) {
+  }
+
+  // beforeInput fires for ALL value mutations — typing, paste, drag-drop,
+  // IME compose, etc. — BEFORE the browser applies the change. Snapshot
+  // the pre-edit state here so Ctrl+Z can restore it.
+  //
+  // Coalescing rule: if the previous edit was less than COALESCE_MS ago
+  // AND was a plain character insertion (not paste/delete-line/IME), skip
+  // taking a new snapshot — the existing top-of-stack entry is still the
+  // right "undo to this" target. Paste / Backspace / Enter always force a
+  // snapshot so undo granularity matches user expectation (one Ctrl+Z =
+  // one paste, one whole word/burst, one line, etc.).
+  const COALESCE_MS = 500;
+  function onBeforeInput(e: React.FormEvent<HTMLTextAreaElement>) {
+    const native = e.nativeEvent as InputEvent;
+    const now = performance.now();
+    // WebKit2GTK leaves inputType empty for plain typing, so we can't
+    // distinguish typing/paste/etc. via the spec field. Heuristic:
+    // "insertFromPaste"/"deleteContent…"/etc. when present do break
+    // coalescing; otherwise treat short-interval inputs as same burst.
+    const inputType = native.inputType ?? "";
+    const breakingInputType = inputType !== "" && inputType !== "insertText";
+    const recent = now - lastEditAtRef.current < COALESCE_MS;
+    const willSnap = breakingInputType || !recent || undoRef.current.length === 0;
+    if (willSnap) {
       snapshot(undoRef);
-      redoRef.current = []; // any new edit invalidates redo history
+      redoRef.current = [];
     }
+    lastEditAtRef.current = now;
   }
 
   if (initialText === null) {
@@ -196,6 +220,7 @@ export function EditTodo() {
         ref={ref}
         defaultValue={initialText}
         onKeyDown={onKeyDown}
+        onBeforeInput={onBeforeInput}
         disabled={saving}
         placeholder="Title… (next lines become notes)"
         className="flex-1 min-h-48 bg-bgsub border border-bgmute rounded p-3 text-fg font-mono text-sm focus:outline-none focus:border-accent resize-none"
