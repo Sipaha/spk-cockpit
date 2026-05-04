@@ -14,8 +14,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/spk/spk-cockpit/internal/api"
 	"github.com/spk/spk-cockpit/internal/appfiles"
@@ -290,7 +292,21 @@ func runStart(ctx context.Context) error {
 			logger.Warn("tray: controller init failed", "err", err)
 			return
 		}
-		c.Run(ctx, bus, todoSvc, mtgFetch)
+		// Defer the live-update goroutine until ApplicationStarted fires
+		// AND give a brief grace period. v3 alpha.78's linux systray
+		// exports its DBus properties from a pending-runnable goroutine
+		// that app.Run launches in parallel with the GTK main loop; if
+		// we emit SetMenu before that finishes we crash on a nil
+		// menuProps deref. On Linux ApplicationStarted is the GTK
+		// "startup" signal which fires very early, possibly BEFORE the
+		// systray's dispatched setup runs on the main thread, so we
+		// extend the delay with a sleep to outlast the race.
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+			go func() {
+				time.Sleep(200 * time.Millisecond)
+				c.Run(ctx, bus, todoSvc, mtgFetch)
+			}()
+		})
 	}
 
 	// Wails owns the main thread.
