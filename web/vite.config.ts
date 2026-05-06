@@ -8,7 +8,7 @@ import path from "node:path";
 
 const socketPath = path.join(
   process.env.SPK_COCKPIT_STATE_DIR ||
-    path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local/state"), "spk-cockpit"),
+    path.join(os.homedir(), ".spk", "spk-cockpit", "state"),
   "cockpit.sock",
 );
 
@@ -43,7 +43,11 @@ function udsApiProxy(): Plugin {
           if (!res.headersSent) {
             res.writeHead(502, { "Content-Type": "application/json" });
           }
-          res.end(JSON.stringify({ error: { code: "uds_proxy", message: err.message } }));
+          res.end(
+            JSON.stringify({
+              error: { code: "uds_proxy", message: err.message },
+            }),
+          );
         });
         req.pipe(proxyReq);
       });

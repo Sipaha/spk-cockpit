@@ -76,7 +76,7 @@ environment variable.
 CalDAV (read-only meeting sync) needs both KV keys and the password secret:
 
 ```bash
-SOCK=~/.local/state/spk-cockpit/cockpit.sock
+SOCK=~/.spk/spk-cockpit/state/cockpit.sock
 curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
      -d '{"value": "https://caldav.example.com/principals/alice/"}' http://unix/api/kv/caldav.url
 curl --unix-socket "$SOCK" -X PUT -H 'Content-Type: application/json' \
@@ -86,18 +86,25 @@ echo "my-app-password" | spk-cockpit secret set caldav_password
 
 ## Filesystem layout
 
+All cockpit files live under `~/.spk/spk-cockpit/`, alongside other SPK
+products (`~/.spk/spk-editor/`, `~/.spk/spk-mail/`):
+
 | Path | Contents |
 |---|---|
-| `~/.local/share/spk-cockpit/cockpit.db` | SQLite database |
-| `~/.local/state/spk-cockpit/cockpit.sock` | Unix socket (HTTP + SSE API) |
-| `~/.local/state/spk-cockpit/log/cockpit.log` | Daemon log |
-| `~/.config/systemd/user/spk-cockpit.service` | Autostart unit (when installed) |
+| `~/.spk/spk-cockpit/data/cockpit.db` | SQLite database |
+| `~/.spk/spk-cockpit/state/cockpit.sock` | Unix socket (HTTP + SSE API) |
+| `~/.spk/spk-cockpit/state/cockpit.pid` | Daemon PID file |
+| `~/.spk/spk-cockpit/logs/cockpit.log` | Daemon log |
+| `~/.spk/spk-cockpit/config/` | Reserved (currently unused) |
+| `~/.config/systemd/user/spk-cockpit.service` | Autostart unit (when installed); systemd requires this fixed location |
 
-Override paths via `SPK_COCKPIT_DATA_DIR`, `SPK_COCKPIT_STATE_DIR`, `SPK_COCKPIT_CONFIG_DIR`.
+Override individual directories via `SPK_COCKPIT_DATA_DIR`,
+`SPK_COCKPIT_STATE_DIR`, `SPK_COCKPIT_CONFIG_DIR`, `SPK_COCKPIT_LOG_DIR`
+(used by tests and packaging).
 
 ## Architecture
 
-The daemon owns one tray icon, one Wails window (hide-on-close), a Unix-domain-socket HTTP server (REST + SSE) at `~/.local/state/spk-cockpit/cockpit.sock`, and a handful of background workers (CalDAV syncer, notification scheduler, GC). The CLI is a thin client over the same UDS — there is no second SQLite path.
+The daemon owns one tray icon, one Wails window (hide-on-close), a Unix-domain-socket HTTP server (REST + SSE) at `~/.spk/spk-cockpit/state/cockpit.sock`, and a handful of background workers (CalDAV syncer, notification scheduler, GC). The CLI is a thin client over the same UDS — there is no second SQLite path.
 
 Sync is **read-only** in v1: CalDAV updates the local mirror, manual meetings stay local.
 
